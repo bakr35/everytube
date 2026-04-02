@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+venv/
+env/
+.env
+*.egg-info/
+dist/
+build/
+
+# Backend temp files
+backend/temp/
+backend/downloads/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+.env.local
+.env*.local
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/

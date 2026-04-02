@@ -1,0 +1,25 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --lime: #CCFF00;
+}
+
+body {
+  background: #000000;
+  color: #ffffff;
+}
+
+input:focus {
+  outline: none;
+}
+
+::-webkit-scrollbar { width: 2px; }
+::-webkit-scrollbar-track { background: #000; }
+::-webkit-scrollbar-thumb { background: #333; }
+
+::selection {
+  background: #CCFF00;
+  color: #000;
+}
