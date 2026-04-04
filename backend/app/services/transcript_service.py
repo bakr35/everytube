@@ -36,11 +36,13 @@ def fetch_transcript(url: str, language: str = "en") -> dict:
         raise NoTranscriptFound(video_id, [language], transcript_list)
 
     # Pick: requested language → any manual → any generated → first available
+    # "auto" skips language matching and just takes the best available
     target = None
-    for t in available:
-        if t.language_code == language:
-            target = t
-            break
+    if language != "auto":
+        for t in available:
+            if t.language_code == language:
+                target = t
+                break
     if target is None:
         for t in available:
             if not t.is_generated:

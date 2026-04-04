@@ -2,22 +2,31 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Light mode (default) — "Ink on Paper" ────────────────────────────────── */
 :root {
   --lime: #CCFF00;
+  --color-bg:   255 255 255;   /* #FFFFFF pure white — paper surface  */
+  --color-fg:   17  17  17;    /* #111111 near-black — ink            */
+  --color-card: 28  25  23;    /* stone-900 for subtle tint overlays  */
+}
+
+/* ── Dark mode (.dark class on <html> set by next-themes) ─────────────────── */
+.dark {
+  --color-bg:   0   0   0;     /* #000000 OLED black  */
+  --color-fg:   255 255 255;   /* #FFFFFF white       */
+  --color-card: 255 255 255;   /* card overlays: white at low alpha  */
 }
 
 body {
-  background: #000000;
-  color: #ffffff;
+  background-color: rgb(var(--color-bg));
+  color: rgb(var(--color-fg));
 }
 
-input:focus {
-  outline: none;
-}
+input:focus { outline: none; }
 
-::-webkit-scrollbar { width: 2px; }
-::-webkit-scrollbar-track { background: #000; }
-::-webkit-scrollbar-thumb { background: #333; }
+::-webkit-scrollbar        { width: 2px; }
+::-webkit-scrollbar-track  { background: rgb(var(--color-bg)); }
+::-webkit-scrollbar-thumb  { background: rgb(var(--color-fg) / 0.2); }
 
 ::selection {
   background: #CCFF00;

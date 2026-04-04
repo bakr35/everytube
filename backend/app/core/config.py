@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     ]
     # Resolved once at startup — all services read from here
     ffmpeg_path: str = ""
+    # Optional: path to a Netscape-format cookies.txt exported from your browser.
+    # Set via COOKIES_FILE env var or .env file to bypass YouTube bot detection.
+    cookies_file: str = ""
 
     model_config = {"env_file": ".env"}
 

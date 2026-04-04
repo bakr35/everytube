@@ -7,7 +7,10 @@ export function useJobPoller(jobId: string | null) {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    if (!jobId) return;
+    if (!jobId) {
+      setJob(null);
+      return;
+    }
 
     const tick = async () => {
       try {

@@ -1,4 +1,6 @@
 import subprocess
+import urllib.request
+import tempfile
 from pathlib import Path
 from app.core.config import settings
 from app.core.jobs import update_job, JobStatus
@@ -15,22 +17,77 @@ def _ffmpeg(*args: str) -> list[str]:
     return [settings.ffmpeg_path, *args]
 
 
-def extract_audio(job_id: str, source_path: str, fmt: str) -> Path:
+def _embed_cover(mp3_path: Path, thumbnail_url: str) -> None:
+    """Download thumbnail and embed it as MP3 cover art."""
+    tmp_img = None
+    tmp_out = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
+            tmp_img = Path(f.name)
+        urllib.request.urlretrieve(thumbnail_url, str(tmp_img))
+
+        tmp_out = mp3_path.with_suffix(".cover_tmp.mp3")
+        _run(_ffmpeg(
+            "-y",
+            "-i", str(mp3_path),
+            "-i", str(tmp_img),
+            "-map", "0:0",
+            "-map", "1:0",
+            "-c", "copy",
+            "-id3v2_version", "3",
+            "-metadata:s:v", "title=Album cover",
+            "-metadata:s:v", "comment=Cover (front)",
+            str(tmp_out),
+        ))
+        tmp_out.replace(mp3_path)
+    except Exception:
+        # Cover art embedding is best-effort — don't fail the whole job
+        if tmp_out and tmp_out.exists():
+            tmp_out.unlink(missing_ok=True)
+    finally:
+        if tmp_img and tmp_img.exists():
+            tmp_img.unlink(missing_ok=True)
+
+
+def extract_audio(
+    job_id: str,
+    source_path: str,
+    fmt: str,
+    bitrate: str = "192k",
+    output_name: str = "",
+    title: str = "",
+    uploader: str = "",
+    thumbnail_url: str = "",
+) -> Path:
     out_dir = settings.download_dir / job_id
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    stem = Path(source_path).stem
-    out_file = out_dir / f"{stem}_audio.{fmt}"
+    # output_name from frontend takes priority; fall back to title then stem
+    raw = output_name or title or Path(source_path).stem
+    safe_stem = "".join(c for c in raw if c not in r'\/:*?"<>|').strip()
+    out_file = out_dir / f"{safe_stem}.{fmt}"
 
-    update_job(job_id, status=JobStatus.RUNNING, progress=10, message="Extracting audio…")
+    update_job(job_id, status=JobStatus.RUNNING, progress=10, message="Downloading audio stream…")
 
-    _run(_ffmpeg(
-        "-y",
-        "-i", source_path,
-        "-vn",
-        "-acodec", _codec_for(fmt),
-        str(out_file),
-    ))
+    cmd = _ffmpeg("-y", "-i", source_path, "-vn", "-acodec", _codec_for(fmt))
+    # Apply bitrate only for lossy formats
+    if fmt == "mp3" and bitrate:
+        cmd += ["-b:a", bitrate]
+    if title:
+        cmd += ["-metadata", f"title={title}"]
+    if uploader:
+        cmd += ["-metadata", f"artist={uploader}", "-metadata", f"album_artist={uploader}"]
+    if title:
+        cmd += ["-metadata", f"album={title}"]
+    cmd += [str(out_file)]
+
+    update_job(job_id, progress=30, message="Encoding audio…")
+    _run(cmd)
+
+    # Embed cover art for MP3 (best-effort)
+    if thumbnail_url and fmt == "mp3":
+        update_job(job_id, progress=80, message="Embedding cover art…")
+        _embed_cover(out_file, thumbnail_url)
 
     update_job(
         job_id,
@@ -43,14 +100,23 @@ def extract_audio(job_id: str, source_path: str, fmt: str) -> Path:
     return out_file
 
 
-def trim_audio(job_id: str, source_path: str, start: float, end: float) -> Path:
+def _fmt_ts(s: float) -> str:
+    """Format seconds as HH:MM:SS or MM:SS for status messages."""
+    h, rem = divmod(int(s), 3600)
+    m, sec = divmod(rem, 60)
+    return f"{h:02d}:{m:02d}:{sec:02d}" if h else f"{m:02d}:{sec:02d}"
+
+
+def trim_audio(job_id: str, source_path: str, start: float, end: float, output_name: str = "") -> Path:
     out_dir = settings.download_dir / job_id
     out_dir.mkdir(parents=True, exist_ok=True)
 
     suffix = Path(source_path).suffix
-    out_file = out_dir / f"trimmed{suffix}"
+    safe_stem = "".join(c for c in (output_name or "trimmed") if c not in r'\/:*?"<>|').strip()
+    out_file = out_dir / f"{safe_stem}{suffix}"
 
-    update_job(job_id, status=JobStatus.RUNNING, progress=10, message="Trimming audio…")
+    update_job(job_id, status=JobStatus.RUNNING, progress=15,
+               message=f"Cutting {_fmt_ts(start)} → {_fmt_ts(end)}…")
 
     _run(_ffmpeg(
         "-y",
@@ -60,6 +126,8 @@ def trim_audio(job_id: str, source_path: str, start: float, end: float) -> Path:
         "-c", "copy",
         str(out_file),
     ))
+
+    update_job(job_id, progress=90, message="Finalizing…")
 
     update_job(
         job_id,

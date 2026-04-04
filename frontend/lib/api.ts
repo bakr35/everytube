@@ -8,6 +8,7 @@ export interface Metadata {
   thumbnail: string;
   view_count: number | null;
   available_qualities: string[];
+  description: string;
 }
 
 export interface Job {
@@ -48,21 +49,41 @@ export async function startDownload(url: string, quality: string, format: string
   return res.json();
 }
 
-export async function extractAudio(job_id: string, format: string): Promise<Job> {
+interface AudioMeta {
+  title?: string;
+  uploader?: string;
+  thumbnail_url?: string;
+}
+
+export async function extractAudio(
+  job_id: string,
+  format: string,
+  meta?: AudioMeta,
+  bitrate = "192k",
+  output_name = "",
+): Promise<Job> {
   const res = await fetch(`${BASE}/api/audio/extract`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ job_id, format }),
+    body: JSON.stringify({
+      job_id,
+      format,
+      bitrate,
+      output_name,
+      title: meta?.title ?? "",
+      uploader: meta?.uploader ?? "",
+      thumbnail_url: meta?.thumbnail_url ?? "",
+    }),
   });
   if (!res.ok) throw new Error((await res.json()).detail ?? "Extract failed");
   return res.json();
 }
 
-export async function trimAudio(job_id: string, start: number, end: number): Promise<Job> {
+export async function trimAudio(job_id: string, start: number, end: number, output_name = ""): Promise<Job> {
   const res = await fetch(`${BASE}/api/audio/trim`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ job_id, start, end }),
+    body: JSON.stringify({ job_id, start, end, output_name }),
   });
   if (!res.ok) throw new Error((await res.json()).detail ?? "Trim failed");
   return res.json();
@@ -78,7 +99,7 @@ export async function normalizeAudio(job_id: string): Promise<Job> {
   return res.json();
 }
 
-export async function fetchTranscript(url: string, language = "en"): Promise<Transcript> {
+export async function fetchTranscript(url: string, language = "auto"): Promise<Transcript> {
   const res = await fetch(`${BASE}/api/transcribe`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

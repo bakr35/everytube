@@ -14,12 +14,18 @@ class DownloadRequest(BaseModel):
 class AudioExtractRequest(BaseModel):
     job_id: str                  # refers to a completed download job
     format: str = "mp3"          # "mp3", "wav", "flac"
+    bitrate: str = "192k"        # mp3 only: "128k", "192k", "320k"
+    output_name: str = ""        # desired file stem, e.g. "MyVideo_320k_MP3"
+    title: str = ""
+    uploader: str = ""
+    thumbnail_url: str = ""
 
 
 class AudioTrimRequest(BaseModel):
     job_id: str
     start: float                 # seconds
     end: float                   # seconds
+    output_name: str = ""        # desired file stem, e.g. "MyVideo_Trim_00-00-01-30_320k"
 
 
 class AudioNormalizeRequest(BaseModel):
@@ -29,6 +35,14 @@ class AudioNormalizeRequest(BaseModel):
 class TranscriptRequest(BaseModel):
     url: str
     language: str = "en"
+
+
+class QuranVerifyItem(BaseModel):
+    index: int
+    text: str
+
+class QuranVerifyRequest(BaseModel):
+    segments: list[QuranVerifyItem]
 
 
 # --- Response bodies ---
@@ -63,3 +77,4 @@ class MetadataResponse(BaseModel):
     thumbnail: str               # URL
     view_count: Optional[int]
     available_qualities: list[str]
+    description: str = ""

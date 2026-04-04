@@ -22,8 +22,9 @@ async def start_extract(req: AudioExtractRequest):
     source = _source_path(req.job_id)
     job = create_job()
 
-    loop = asyncio.get_event_loop()
-    loop.run_in_executor(None, _run_extract, job.id, source, req.format)
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(None, _run_extract, job.id, source, req.format,
+                         req.bitrate, req.output_name, req.title, req.uploader, req.thumbnail_url)
 
     return JobResponse(job_id=job.id, status=job.status, progress=0, message="Job queued")
 
@@ -37,8 +38,8 @@ async def start_trim(req: AudioTrimRequest):
     source = _source_path(req.job_id)
     job = create_job()
 
-    loop = asyncio.get_event_loop()
-    loop.run_in_executor(None, _run_trim, job.id, source, req.start, req.end)
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(None, _run_trim, job.id, source, req.start, req.end, req.output_name)
 
     return JobResponse(job_id=job.id, status=job.status, progress=0, message="Job queued")
 
@@ -49,7 +50,7 @@ async def start_normalize(req: AudioNormalizeRequest):
     source = _source_path(req.job_id)
     job = create_job()
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     loop.run_in_executor(None, _run_normalize, job.id, source)
 
     return JobResponse(job_id=job.id, status=job.status, progress=0, message="Job queued")
@@ -57,16 +58,17 @@ async def start_normalize(req: AudioNormalizeRequest):
 
 # --- sync wrappers for executor ---
 
-def _run_extract(job_id, source, fmt):
+def _run_extract(job_id, source, fmt, bitrate="192k", output_name="", title="", uploader="", thumbnail_url=""):
     try:
-        extract_audio(job_id, source, fmt)
+        extract_audio(job_id, source, fmt, bitrate=bitrate, output_name=output_name,
+                      title=title, uploader=uploader, thumbnail_url=thumbnail_url)
     except Exception as e:
         update_job(job_id, status=JobStatus.ERROR, error=str(e), message="Extraction failed")
 
 
-def _run_trim(job_id, source, start, end):
+def _run_trim(job_id, source, start, end, output_name=""):
     try:
-        trim_audio(job_id, source, start, end)
+        trim_audio(job_id, source, start, end, output_name=output_name)
     except Exception as e:
         update_job(job_id, status=JobStatus.ERROR, error=str(e), message="Trim failed")
 
