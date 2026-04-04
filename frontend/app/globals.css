@@ -2,6 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
+html {
+  font-size: 110%;
+}
+
 /* ── Light mode (default) — "Ink on Paper" ────────────────────────────────── */
 :root {
   --lime: #CCFF00;

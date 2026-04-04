@@ -113,8 +113,8 @@ interface Paragraph {
 }
 
 function groupIntoParagraphs(segments: TranscriptSegment[]): Paragraph[] {
-  const MAX_SEGS = 5;
-  const TIME_GAP = 1.5;
+  const MAX_SEGS = 8;
+  const TIME_GAP = 3.0;
 
   const result: Paragraph[] = [];
   let indices: number[] = [];
@@ -141,7 +141,7 @@ function groupIntoParagraphs(segments: TranscriptSegment[]): Paragraph[] {
     indices.push(i);
     segs.push(seg);
 
-    if (/[.!?؟]\s*$/.test(text)) { sentCount++; if (sentCount >= 3) flush(); }
+    if (/[.!?؟]\s*$/.test(text)) { sentCount++; if (sentCount >= 5) flush(); }
     if (segs.length >= MAX_SEGS) flush();
   });
 
@@ -248,12 +248,28 @@ export default function TranscriptCard({ url, title, uploader, description, vide
   const [isQuranic, setIsQuranic]               = useState<boolean>(
     () => metaIsQuranic(title, uploader, description)
   );
-  // Track which layer fired so the UI can show context
   const [quranTrigger, setQuranTrigger]         = useState<"meta" | "content">(
     () => (metaIsQuranic(title, uploader, description) ? "meta" : "content")
   );
 
   const downloadRef = useRef<HTMLDivElement>(null);
+
+  // Re-evaluate barrier whenever video metadata changes (e.g. new video loaded
+  // or Clear Dashboard fired and a fresh video props arrive).
+  useEffect(() => {
+    const detected = metaIsQuranic(title, uploader, description);
+    setIsQuranic(detected);
+    setQuranTrigger("meta");
+    // Reset all viewer state so the next video starts completely clean
+    setTranscript(null);
+    setSearchQuery("");
+    setExpanded(false);
+    setShowTimestamps(false);
+    setShowDownloadMenu(false);
+    setActiveMatchIndex(0);
+    setError(null);
+    setLanguage("auto");
+  }, [title, uploader, description]);
 
   const isRtl = IS_RTL(transcript?.language ?? language);
 
@@ -547,7 +563,7 @@ export default function TranscriptCard({ url, title, uploader, description, vide
                                 return (
                                   <div key={gi} className="flex items-baseline gap-3 py-0.5 hover:bg-stone-50 dark:hover:bg-white/[0.03] rounded-sm px-1 -mx-1 transition-colors">
                                     <span
-                                      className="text-[11px] font-mono shrink-0 w-12 text-right text-stone-400 dark:text-lime/50 select-none"
+                                      className="text-[0.85rem] font-mono shrink-0 w-14 text-right text-stone-400 dark:text-lime/50 select-none"
                                       style={{ direction: "ltr" }}
                                     >
                                       [{formatTime(seg.start)}]
@@ -567,7 +583,7 @@ export default function TranscriptCard({ url, title, uploader, description, vide
                         /* ── Reader / paragraph view ── */
                         <div className="px-5 py-5 text-stone-800 dark:text-fg/80">
                           {paragraphs.map((para, pi) => (
-                            <p key={pi} className="mb-5 last:mb-0" style={readerStyle}>
+                            <p key={pi} className="mb-4 last:mb-0" style={readerStyle}>
                               {para.segments.map((seg, si) => (
                                 <span key={para.segmentIndices[si]}>
                                   <Highlighted

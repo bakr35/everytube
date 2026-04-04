@@ -132,7 +132,7 @@ export default function UrlInput({ value, onChange, onDetected, onReset, collaps
               exit={{ opacity: 0, scale: 0.8 }}
               transition={{ duration: 0.1 }}
               onClick={() => { onReset ? onReset() : onChange(""); }}
-              className="absolute right-0 text-fg/30 hover:text-fg/70 transition-colors duration-150 shrink-0"
+              className="absolute right-0 border border-fg/30 hover:border-red-500 text-fg/50 hover:text-red-500 transition-colors duration-150 shrink-0 p-1"
               aria-label="Clear"
             >
               <X size={collapsed ? 16 : 22} />
