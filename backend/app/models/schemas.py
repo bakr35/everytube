@@ -11,6 +11,13 @@ class DownloadRequest(BaseModel):
     format: str = "mp4"          # "mp4", "webm"
 
 
+class AudioDownloadRequest(BaseModel):
+    url: str
+    format: str = "mp3"           # "mp3", "wav", "flac"
+    bitrate: str = "192k"         # mp3 only
+    output_name: str = ""         # desired file stem
+
+
 class AudioExtractRequest(BaseModel):
     job_id: str                  # refers to a completed download job
     format: str = "mp3"          # "mp3", "wav", "flac"

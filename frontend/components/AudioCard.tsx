@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Music, ChevronDown, Check } from "lucide-react";
-import { startDownload, extractAudio, trimAudio, pollJob, type Metadata } from "@/lib/api";
+import { startAudioDownload, trimAudio, pollJob, type Metadata } from "@/lib/api";
 import { useJobPoller } from "@/hooks/useJobPoller";
 import ProgressButton from "./ProgressButton";
 
@@ -76,16 +76,6 @@ async function waitForJob(jobId: string): Promise<string> {
   });
 }
 
-async function resolveVideoJobId(sourceJobId: string | null | undefined, url: string): Promise<string> {
-  if (sourceJobId) {
-    try {
-      const j = await pollJob(sourceJobId);
-      if (j.status === "done") return sourceJobId;
-    } catch { /* expired — fall through */ }
-  }
-  const dl = await startDownload(url, "best", "mp4");
-  return waitForJob(dl.job_id);
-}
 
 function Select({
   label, value, onChange, options, disabled,
@@ -202,20 +192,15 @@ export default function AudioCard({ url, meta, sourceJobId }: Props) {
     setJobId(null);
     setIsStarting(true);
     try {
-      const dlId = await resolveVideoJobId(sourceJobId, url);
-      const audioMeta = {
-        title: meta?.title,
-        uploader: meta?.uploader,
-        thumbnail_url: meta?.thumbnail,
-      };
-      const extr = await extractAudio(dlId, audioFmt, audioMeta, bitrate, extractStem);
+      // Single-pass: yt-dlp downloads audio stream + converts in one shot
+      const audio = await startAudioDownload(url, audioFmt, bitrate, extractStem);
       setIsStarting(false);
-      setJobId(extr.job_id);          // show extract job progress immediately
+      setJobId(audio.job_id);
 
       if (trimEnabled) {
-        const extrId = await waitForJob(extr.job_id);
-        setJobId(null);               // clear extract job before starting trim
-        const trimmed = await trimAudio(extrId, parseStamp(trimStart), parseStamp(trimEnd), trimStem);
+        const audioId = await waitForJob(audio.job_id);
+        setJobId(null);
+        const trimmed = await trimAudio(audioId, parseStamp(trimStart), parseStamp(trimEnd), trimStem);
         setJobId(trimmed.job_id);
       }
     } catch (e: unknown) {
@@ -251,11 +236,6 @@ export default function AudioCard({ url, meta, sourceJobId }: Props) {
         <span className="font-display font-black uppercase tracking-widest text-sm text-fg">
           Audio Processing
         </span>
-        {sourceJobId && (
-          <span className="text-[10px] font-body tracking-widest uppercase text-emerald-700 dark:text-lime/50 ml-auto">
-            ✓ Video ready
-          </span>
-        )}
       </div>
 
       {/* Selectors */}

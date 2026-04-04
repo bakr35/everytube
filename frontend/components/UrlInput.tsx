@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Clock, X } from "lucide-react";
 
-const YT_REGEX = /(?:(?:www\.|m\.)?youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|v\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
+const YT_REGEX       = /(?:(?:www\.|m\.)?youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|v\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
+const PLAYLIST_REGEX = /(?:www\.)?youtube\.com\/playlist\?(?:[^#\s]*&)?list=([A-Za-z0-9_-]+)/;
 const RECENT_KEY = "yt_recent";
 const MAX_RECENT = 5;
 
@@ -56,7 +57,7 @@ export default function UrlInput({ value, onChange, onDetected, onReset, collaps
 
   const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
     const pasted = e.clipboardData.getData("text").trim();
-    if (YT_REGEX.test(pasted)) {
+    if (YT_REGEX.test(pasted) || PLAYLIST_REGEX.test(pasted)) {
       e.preventDefault();
       pasteHandled.current = true;
       onChange(pasted);
@@ -76,7 +77,7 @@ export default function UrlInput({ value, onChange, onDetected, onReset, collaps
     onChange(v);
     setShowRecent(false);
     if (pasteHandled.current) { pasteHandled.current = false; return; }
-    if (YT_REGEX.test(v)) handleDetected(v.trim());
+    if (YT_REGEX.test(v) || PLAYLIST_REGEX.test(v)) handleDetected(v.trim());
   };
 
   const selectRecent = (url: string) => {

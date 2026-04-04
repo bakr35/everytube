@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.core.config import settings
 from app.core.cleanup import start_cleanup_thread
-from app.api import download, audio, transcribe, metadata, jobs
+from app.api import download, audio, transcribe, metadata, jobs, playlist
 
 
 @asynccontextmanager
@@ -33,6 +33,7 @@ app.include_router(audio.router, prefix="/api", tags=["Audio"])
 app.include_router(transcribe.router, prefix="/api", tags=["Transcribe"])
 app.include_router(metadata.router, prefix="/api", tags=["Metadata"])
 app.include_router(jobs.router, prefix="/api", tags=["Jobs"])
+app.include_router(playlist.router, prefix="/api", tags=["Playlist"])
 
 
 @app.get("/health")

@@ -55,6 +55,21 @@ interface AudioMeta {
   thumbnail_url?: string;
 }
 
+export async function startAudioDownload(
+  url: string,
+  format: string,
+  bitrate = "192k",
+  output_name = "",
+): Promise<Job> {
+  const res = await fetch(`${BASE}/api/download/audio`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url, format, bitrate, output_name }),
+  });
+  if (!res.ok) throw new Error((await res.json()).detail ?? "Audio download failed");
+  return res.json();
+}
+
 export async function extractAudio(
   job_id: string,
   format: string,
@@ -96,6 +111,28 @@ export async function normalizeAudio(job_id: string): Promise<Job> {
     body: JSON.stringify({ job_id }),
   });
   if (!res.ok) throw new Error((await res.json()).detail ?? "Normalize failed");
+  return res.json();
+}
+
+export interface PlaylistVideo {
+  video_id: string;
+  title: string;
+  thumbnail: string;
+  duration: number;
+  uploader: string;
+}
+
+export interface PlaylistInfo {
+  playlist_id: string;
+  title: string;
+  uploader: string;
+  video_count: number;
+  videos: PlaylistVideo[];
+}
+
+export async function fetchPlaylistInfo(url: string): Promise<PlaylistInfo> {
+  const res = await fetch(`${BASE}/api/playlist/info?url=${encodeURIComponent(url)}`);
+  if (!res.ok) throw new Error((await res.json()).detail ?? "Failed to fetch playlist");
   return res.json();
 }
 

@@ -3,13 +3,16 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { RotateCcw } from "lucide-react";
-import { fetchMetadata, type Metadata } from "@/lib/api";
+import { fetchMetadata, fetchPlaylistInfo, type Metadata, type PlaylistInfo } from "@/lib/api";
 import UrlInput from "@/components/UrlInput";
 import MetadataCard from "@/components/MetadataCard";
 import VideoCard from "@/components/VideoCard";
 import AudioCard from "@/components/AudioCard";
 import TranscriptCard from "@/components/TranscriptCard";
+import PlaylistCard from "@/components/PlaylistCard";
 import ThemeToggle from "@/components/ThemeToggle";
+
+const PLAYLIST_REGEX = /(?:www\.)?youtube\.com\/playlist\?(?:[^#\s]*&)?list=([A-Za-z0-9_-]+)/;
 
 const cardSpring = {
   hidden: { opacity: 0, y: 40 },
@@ -21,17 +24,37 @@ const cardSpring = {
 };
 
 export default function Home() {
-  const [url, setUrl] = useState("");
-  const [meta, setMeta] = useState<Metadata | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [fetchedUrl, setFetchedUrl] = useState<string | null>(null);
-  const [sharedVideoJobId, setSharedVideoJobId] = useState<string | null>(null);
+  const [url, setUrl]                             = useState("");
+  const [meta, setMeta]                           = useState<Metadata | null>(null);
+  const [loading, setLoading]                     = useState(false);
+  const [fetchedUrl, setFetchedUrl]               = useState<string | null>(null);
+  const [sharedVideoJobId, setSharedVideoJobId]   = useState<string | null>(null);
+  const [playlist, setPlaylist]                   = useState<PlaylistInfo | null>(null);
+  const [playlistUrl, setPlaylistUrl]             = useState<string | null>(null);
+  const [sessionKey, setSessionKey]               = useState(0);
 
   const handleDetected = async (detectedUrl: string) => {
+    // ── Playlist URL ──────────────────────────────────────────────────────
+    if (PLAYLIST_REGEX.test(detectedUrl)) {
+      if (detectedUrl === playlistUrl) return;
+      setLoading(true);
+      setMeta(null); setFetchedUrl(null); setSharedVideoJobId(null);
+      setPlaylist(null); setPlaylistUrl(detectedUrl);
+      try {
+        const data = await fetchPlaylistInfo(detectedUrl);
+        setPlaylist(data);
+      } catch {
+        setPlaylistUrl(null);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+    // ── Single video URL ──────────────────────────────────────────────────
     if (detectedUrl === fetchedUrl) return;
     setLoading(true);
-    setMeta(null);
-    setFetchedUrl(detectedUrl);
+    setMeta(null); setFetchedUrl(detectedUrl);
+    setPlaylist(null); setPlaylistUrl(null);
     try {
       const data = await fetchMetadata(detectedUrl);
       setMeta(data);
@@ -46,8 +69,11 @@ export default function Home() {
     setUrl("");
     setMeta(null);
     setFetchedUrl(null);
+    setPlaylist(null);
+    setPlaylistUrl(null);
     setLoading(false);
     setSharedVideoJobId(null);
+    setSessionKey(k => k + 1);
   };
 
   return (
@@ -113,7 +139,7 @@ export default function Home() {
 
           {/* Clear Dashboard */}
           <AnimatePresence>
-            {meta && (
+            {(meta || playlist) && (
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -132,17 +158,17 @@ export default function Home() {
             )}
           </AnimatePresence>
 
-          {/* Cards */}
+          {/* Single-video cards — hidden when a playlist is active */}
           <AnimatePresence>
-            {meta && fetchedUrl && (
+            {meta && fetchedUrl && !playlist && !playlistUrl && (
               <>
                 {[
-                  <VideoCard key={`video-${fetchedUrl}`} url={fetchedUrl} meta={meta} onDownloadStart={() => setSharedVideoJobId(null)} onDownloadComplete={setSharedVideoJobId} />,
-                  <AudioCard key={`audio-${fetchedUrl}`} url={fetchedUrl} meta={meta} sourceJobId={sharedVideoJobId} />,
-                  <TranscriptCard key={`transcript-${fetchedUrl}`} url={fetchedUrl} title={meta.title} uploader={meta.uploader} description={meta.description} videoUrl={fetchedUrl} />,
+                  <VideoCard key={`video-${sessionKey}-${fetchedUrl}`} url={fetchedUrl} meta={meta} onDownloadStart={() => setSharedVideoJobId(null)} onDownloadComplete={setSharedVideoJobId} />,
+                  <AudioCard key={`audio-${sessionKey}-${fetchedUrl}`} url={fetchedUrl} meta={meta} sourceJobId={sharedVideoJobId} />,
+                  <TranscriptCard key={`transcript-${sessionKey}-${fetchedUrl}`} url={fetchedUrl} title={meta.title} uploader={meta.uploader} description={meta.description} videoUrl={fetchedUrl} />,
                 ].map((card, i) => (
                   <motion.div
-                    key={`${i}-${fetchedUrl}`}
+                    key={`${i}-${sessionKey}-${fetchedUrl}`}
                     custom={i}
                     variants={cardSpring}
                     initial="hidden"
@@ -153,6 +179,22 @@ export default function Home() {
                   </motion.div>
                 ))}
               </>
+            )}
+          </AnimatePresence>
+
+          {/* Playlist card */}
+          <AnimatePresence>
+            {playlist && playlistUrl && (
+              <motion.div
+                key={`playlist-${sessionKey}-${playlistUrl}`}
+                custom={0}
+                variants={cardSpring}
+                initial="hidden"
+                animate="show"
+                className="border border-stone-200 hover:border-stone-400 shadow-md dark:border-lime/30 dark:hover:border-lime/60 dark:shadow-none transition-colors duration-200"
+              >
+                <PlaylistCard playlist={playlist} playlistUrl={playlistUrl} />
+              </motion.div>
             )}
           </AnimatePresence>
 

@@ -141,7 +141,7 @@ function groupIntoParagraphs(segments: TranscriptSegment[]): Paragraph[] {
     indices.push(i);
     segs.push(seg);
 
-    if (/[.!?؟]\s*$/.test(text)) { sentCount++; if (sentCount >= 5) flush(); }
+    if (/[.!?؟]\s*$/.test(text)) { sentCount++; if (sentCount >= 3) flush(); }
     if (segs.length >= MAX_SEGS) flush();
   });
 
@@ -367,7 +367,7 @@ export default function TranscriptCard({ url, title, uploader, description, vide
   const readerStyle: React.CSSProperties = {
     fontFamily: TRANSCRIPT_FONT,
     fontSize:   "0.9rem",
-    lineHeight: "1.65",
+    lineHeight: "2.2",
     ...(isRtl ? { textAlign: "right" as const, direction: "rtl" as const } : {}),
   };
 

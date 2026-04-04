@@ -28,3 +28,4 @@ out/
 # IDE
 .vscode/
 .idea/
+backend/cookies.txt

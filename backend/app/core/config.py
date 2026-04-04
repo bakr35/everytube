@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     # Optional: path to a Netscape-format cookies.txt exported from your browser.
     # Set via COOKIES_FILE env var or .env file to bypass YouTube bot detection.
     cookies_file: str = ""
+    # Optional: pull cookies live from an installed browser (no export needed).
+    # Values: "chrome", "firefox", "safari", "edge", "brave", "chromium" — or leave empty.
+    cookies_from_browser: str = ""
 
     model_config = {"env_file": ".env"}
 

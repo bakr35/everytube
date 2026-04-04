@@ -1,13 +1,20 @@
+import re
 import shutil
 import yt_dlp
 from pathlib import Path
 from app.core.config import settings
 from app.core.jobs import update_job, JobStatus
 
+
+def _clean(text: str) -> str:
+    """Strip ANSI escape codes from yt-dlp error messages."""
+    return re.sub(r'\x1b\[[0-9;]*[mK]', '', text)
+
 # ── MP4 quality map ──────────────────────────────────────────────────────────
 # Prefers H.264 (vcodec^=avc1) + AAC (acodec^=mp4a) so FFmpeg can stream-copy
 # (no re-encoding). QuickTime / iOS / all browsers play H.264+AAC MP4 natively.
 QUALITY_MAP_MP4 = {
+    "bestaudio": "bestaudio[ext=m4a]/bestaudio",
     "best":  "bestvideo[vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
     "2160p": "bestvideo[height<=2160][vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo[height<=2160][ext=mp4]+bestaudio[ext=m4a]/best[height<=2160]",
     "1080p": "bestvideo[height<=1080][vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080]",
@@ -21,6 +28,7 @@ QUALITY_MAP_MP4 = {
 # selected. Falls back to any webm, then anything; FFmpegVideoConvertor will
 # re-encode as needed without the stream-copy restriction.
 QUALITY_MAP_WEBM = {
+    "bestaudio": "bestaudio[ext=webm]/bestaudio",
     "best":  "bestvideo[vcodec^=vp9]+bestaudio[acodec^=opus]/bestvideo[ext=webm]+bestaudio[ext=webm]/bestvideo+bestaudio/best",
     "2160p": "bestvideo[height<=2160][vcodec^=vp9]+bestaudio[acodec^=opus]/bestvideo[height<=2160][ext=webm]+bestaudio/best[height<=2160]",
     "1080p": "bestvideo[height<=1080][vcodec^=vp9]+bestaudio[acodec^=opus]/bestvideo[height<=1080][ext=webm]+bestaudio/best[height<=1080]",
@@ -89,7 +97,7 @@ def download_video(job_id: str, url: str, quality: str, fmt: str) -> Path:
     except yt_dlp.utils.DownloadError as exc:
         # Surface the yt-dlp/FFmpeg error text directly so the frontend can
         # display something actionable rather than the generic "Download failed".
-        msg = str(exc)
+        msg = _clean(str(exc))
         if "ffmpeg" in msg.lower() or "converter" in msg.lower():
             raise RuntimeError(f"FFmpeg conversion failed: {msg[-300:]}") from exc
         raise RuntimeError(f"Download error: {msg[-300:]}") from exc
@@ -112,14 +120,127 @@ def download_video(job_id: str, url: str, quality: str, fmt: str) -> Path:
 
 
 def _base_opts() -> dict:
-    """Shared yt-dlp options. Includes cookie file when configured."""
+    """Shared yt-dlp options. Includes cookie source when configured."""
     opts: dict = {
         "quiet": True,
         "noplaylist": True,
+        "no_color": True,
     }
+    # Cookie file takes priority over browser cookies
     if settings.cookies_file and Path(settings.cookies_file).is_file():
         opts["cookiefile"] = settings.cookies_file
+    elif settings.cookies_from_browser:
+        opts["cookiesfrombrowser"] = (settings.cookies_from_browser,)
     return opts
+
+
+def download_audio(job_id: str, url: str, fmt: str, bitrate: str = "192k", output_name: str = "") -> Path:
+    """
+    Download and convert audio in one yt-dlp pass.
+    Uses the same proven format selector as the old bestaudio flow, converted
+    via FFmpegExtractAudio postprocessor — no intermediate video file.
+    """
+    out_dir = settings.download_dir / f"{job_id}_audio_{fmt}"
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
+    out_dir.mkdir(parents=True)
+
+    if output_name:
+        safe = "".join(c for c in output_name if c not in r'\/:*?"<>|').strip()
+        outtmpl = str(out_dir / f"{safe}.%(ext)s")
+    else:
+        outtmpl = str(out_dir / "%(title)s.%(ext)s")
+
+    ydl_opts = {
+        **_base_opts(),
+        # Same selector that worked in the old two-step flow
+        "format": "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio",
+        "outtmpl": outtmpl,
+        "ffmpeg_location": str(Path(settings.ffmpeg_path).parent),
+        "progress_hooks": [_make_progress_hook(job_id)],
+        "postprocessors": [
+            {
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": fmt,
+                "preferredquality": bitrate.rstrip("k") if fmt == "mp3" else "0",
+            },
+            {"key": "FFmpegMetadata", "add_metadata": True},
+        ],
+    }
+
+    update_job(job_id, status=JobStatus.RUNNING, message="Starting audio download…")
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+    except yt_dlp.utils.DownloadError as exc:
+        raise RuntimeError(f"Download error: {_clean(str(exc))[-300:]}") from exc
+
+    # Find the converted audio file
+    target_exts = {fmt, "mp3", "wav", "flac", "m4a", "ogg", "opus"}
+    files = [f for f in out_dir.iterdir() if f.suffix.lstrip(".").lower() in target_exts]
+    if not files:
+        raise FileNotFoundError("yt-dlp produced no audio output file")
+
+    out_file = max(files, key=lambda f: f.stat().st_mtime)
+    update_job(
+        job_id,
+        status=JobStatus.DONE,
+        progress=100,
+        message="Audio download complete",
+        file_path=str(out_file),
+        filename=out_file.name,
+    )
+    return out_file
+
+
+def get_playlist_info(url: str) -> dict:
+    """
+    Fetch playlist metadata using yt-dlp's flat extraction.
+    No media is downloaded. Capped at 50 entries for stability.
+    """
+    ydl_opts = {
+        **_base_opts(),
+        "extract_flat": "in_playlist",
+        "playlistend": 50,
+        "ignoreerrors": True,
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+
+    if not info:
+        raise ValueError("Could not fetch playlist info")
+
+    entries = info.get("entries") or []
+    playlist_uploader = info.get("uploader") or info.get("channel") or ""
+
+    videos = []
+    for entry in entries[:50]:
+        if not entry or not entry.get("id"):
+            continue
+        video_id = entry["id"]
+        videos.append({
+            "video_id": video_id,
+            "title": entry.get("title") or f"Video {video_id}",
+            # Construct thumbnail URL directly — flat extraction rarely returns one
+            "thumbnail": (
+                entry.get("thumbnail")
+                or f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg"
+            ),
+            "duration": entry.get("duration") or 0,
+            "uploader": (
+                entry.get("uploader")
+                or entry.get("channel")
+                or playlist_uploader
+            ),
+        })
+
+    return {
+        "playlist_id": info.get("id", ""),
+        "title": info.get("title") or "Untitled Playlist",
+        "uploader": playlist_uploader,
+        "video_count": len(videos),
+        "videos": videos,
+    }
 
 
 def get_metadata(url: str) -> dict:
