@@ -1,5 +1,8 @@
 import re
+import json
 import shutil
+import urllib.request
+import urllib.parse
 import yt_dlp
 from pathlib import Path
 from app.core.config import settings
@@ -9,6 +12,82 @@ from app.core.jobs import update_job, JobStatus
 def _clean(text: str) -> str:
     """Strip ANSI escape codes from yt-dlp error messages."""
     return re.sub(r'\x1b\[[0-9;]*[mK]', '', text)
+
+
+# ── Country code → name + flag emoji ────────────────────────────────────────
+_COUNTRY_NAMES = {
+    "AE": "UAE", "AU": "Australia", "BR": "Brazil", "CA": "Canada",
+    "CN": "China", "DE": "Germany", "EG": "Egypt", "ES": "Spain",
+    "FR": "France", "GB": "UK", "ID": "Indonesia", "IN": "India",
+    "IQ": "Iraq", "IR": "Iran", "IT": "Italy", "JP": "Japan",
+    "KR": "South Korea", "KW": "Kuwait", "LB": "Lebanon", "MA": "Morocco",
+    "MX": "Mexico", "MY": "Malaysia", "NG": "Nigeria", "NL": "Netherlands",
+    "PK": "Pakistan", "PS": "Palestine", "QA": "Qatar", "RU": "Russia",
+    "SA": "Saudi Arabia", "SE": "Sweden", "SY": "Syria", "TR": "Turkey",
+    "TN": "Tunisia", "US": "USA", "YE": "Yemen", "ZA": "South Africa",
+}
+
+def _country_flag(code: str) -> str:
+    """Convert ISO 3166-1 alpha-2 code to flag emoji."""
+    if not code or len(code) != 2:
+        return ""
+    return chr(0x1F1E0 + ord(code[0]) - ord("A")) + chr(0x1F1E0 + ord(code[1]) - ord("A"))
+
+
+def _parse_topic_categories(raw: list[str]) -> list[str]:
+    """Extract readable topic names from Wikipedia URLs."""
+    topics = []
+    for url in raw:
+        # e.g. https://en.wikipedia.org/wiki/Military_history → "Military history"
+        if "/wiki/" in url:
+            slug = url.split("/wiki/")[-1]
+            topics.append(urllib.parse.unquote(slug).replace("_", " "))
+    return topics
+
+
+def get_channel_info(channel_id: str) -> dict:
+    """
+    Fetch channel metadata via YouTube Data API v3.
+    Returns empty dict if no API key is configured or the call fails.
+    """
+    if not settings.youtube_api_key or not channel_id:
+        return {}
+    try:
+        params = urllib.parse.urlencode({
+            "part": "snippet,statistics,topicDetails",
+            "id": channel_id,
+            "key": settings.youtube_api_key,
+        })
+        url = f"https://www.googleapis.com/youtube/v3/channels?{params}"
+        with urllib.request.urlopen(url, timeout=6) as r:
+            data = json.loads(r.read())
+
+        items = data.get("items") or []
+        if not items:
+            return {}
+        item = items[0]
+
+        snippet    = item.get("snippet", {})
+        statistics = item.get("statistics", {})
+        topics     = item.get("topicDetails", {})
+
+        country_code = snippet.get("country", "")
+        country_name = _COUNTRY_NAMES.get(country_code, country_code)
+        flag         = _country_flag(country_code)
+
+        raw_topics = topics.get("topicCategories") or []
+        topic_names = _parse_topic_categories(raw_topics)
+
+        return {
+            "channel_created":     snippet.get("publishedAt", ""),       # ISO timestamp
+            "channel_country":     f"{flag} {country_name}".strip() if country_code else "",
+            "channel_country_code": country_code,
+            "channel_custom_url":  snippet.get("customUrl", ""),          # @handle
+            "channel_video_count": int(statistics.get("videoCount", 0)),
+            "channel_topics":      topic_names,
+        }
+    except Exception:
+        return {}
 
 # ── MP4 quality map ──────────────────────────────────────────────────────────
 # Prefers H.264 (vcodec^=avc1) + AAC (acodec^=mp4a) so FFmpeg can stream-copy
@@ -243,6 +322,35 @@ def get_playlist_info(url: str) -> dict:
     }
 
 
+def _fetch_sponsorblock(video_id: str) -> list[dict]:
+    """Fetch SponsorBlock segments (free, no API key). Returns [] on failure."""
+    try:
+        import urllib.request as ur, json as _json
+        url = f"https://sponsor.ajay.app/api/skipSegments?videoID={video_id}"
+        with ur.urlopen(url, timeout=4) as r:
+            return _json.loads(r.read())
+    except Exception:
+        return []
+
+
+def _fetch_dislikes(video_id: str) -> dict | None:
+    """Fetch estimated dislike count from returnyoutubedislike.com. Returns None on failure."""
+    try:
+        import urllib.request as ur, json as _json
+        url = f"https://returnyoutubedislike.com/api/votes?videoId={video_id}"
+        with ur.urlopen(url, timeout=4) as r:
+            return _json.loads(r.read())
+    except Exception:
+        return None
+
+
+def _fmt_upload_date(raw: str | None) -> str | None:
+    """Convert YYYYMMDD → ISO date string YYYY-MM-DD."""
+    if not raw or len(raw) != 8:
+        return None
+    return f"{raw[:4]}-{raw[4:6]}-{raw[6:]}"
+
+
 def get_metadata(url: str) -> dict:
     ydl_opts = {
         **_base_opts(),
@@ -250,6 +358,8 @@ def get_metadata(url: str) -> dict:
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=False)
+
+    video_id = info.get("id", "")
 
     qualities = sorted(
         {
@@ -261,13 +371,78 @@ def get_metadata(url: str) -> dict:
         reverse=True,
     )
 
+    # HDR formats available?
+    hdr_formats = [
+        f.get("dynamic_range", "")
+        for f in info.get("formats", [])
+        if f.get("dynamic_range") and f.get("dynamic_range") != "SDR"
+    ]
+    hdr_types = sorted(set(filter(None, hdr_formats)))
+
+    # Captions availability
+    subtitles     = info.get("subtitles") or {}
+    auto_captions = info.get("automatic_captions") or {}
+    has_captions  = bool(subtitles)
+    caption_langs = list(subtitles.keys())[:8]          # manual caption languages
+    auto_langs    = list(auto_captions.keys())[:8]       # auto-caption languages
+
+    # Chapters
+    chapters = [
+        {"title": c.get("title", ""), "start_time": c["start_time"], "end_time": c["end_time"]}
+        for c in (info.get("chapters") or [])
+        if "start_time" in c and "end_time" in c
+    ]
+
+    # Heatmap (Most Replayed)
+    heatmap = [
+        {"start_time": h["start_time"], "end_time": h["end_time"], "value": round(h["value"], 4)}
+        for h in (info.get("heatmap") or [])
+    ]
+
+    # Availability label
+    availability = info.get("availability") or "public"
+
+    # SponsorBlock + Dislikes (best-effort, don't fail if down)
+    sponsor_segments = _fetch_sponsorblock(video_id) if video_id else []
+    dislike_data     = _fetch_dislikes(video_id)     if video_id else None
+
+    # Channel metadata via YouTube Data API v3 (skipped if no API key)
+    channel_id   = info.get("channel_id", "")
+    channel_info = get_channel_info(channel_id)
+
     return {
-        "video_id": info.get("id", ""),
-        "title": info.get("title", ""),
-        "uploader": info.get("uploader", ""),
-        "duration": info.get("duration", 0),
-        "thumbnail": info.get("thumbnail", ""),
-        "view_count": info.get("view_count"),
+        "video_id":            video_id,
+        "title":               info.get("title", ""),
+        "uploader":            info.get("uploader", ""),
+        "channel_is_verified": info.get("channel_is_verified", False),
+        "channel_follower_count": info.get("channel_follower_count"),
+        "duration":            info.get("duration", 0),
+        "thumbnail":           info.get("thumbnail", ""),
+        "upload_date":         _fmt_upload_date(info.get("upload_date")),
+        "view_count":          info.get("view_count"),
+        "like_count":          info.get("like_count"),
+        "dislike_count":       dislike_data.get("dislikes") if dislike_data else None,
+        "comment_count":       info.get("comment_count"),
         "available_qualities": qualities or ["best"],
-        "description": info.get("description", ""),
+        "hdr_types":           hdr_types,
+        "description":         info.get("description", ""),
+        "tags":                info.get("tags") or [],
+        "categories":          info.get("categories") or [],
+        "license":             info.get("license") or "",
+        "age_limit":           info.get("age_limit") or 0,
+        "availability":        availability,
+        "live_status":         info.get("live_status") or "",
+        "has_captions":        has_captions,
+        "caption_langs":       caption_langs,
+        "auto_langs":          auto_langs,
+        "chapters":            chapters,
+        "heatmap":             heatmap,
+        "sponsor_segments":    sponsor_segments,
+        "language":            info.get("language") or "",
+        # Channel-level fields (from YouTube Data API v3)
+        "channel_created":     channel_info.get("channel_created", ""),
+        "channel_country":     channel_info.get("channel_country", ""),
+        "channel_custom_url":  channel_info.get("channel_custom_url", ""),
+        "channel_video_count": channel_info.get("channel_video_count"),
+        "channel_topics":      channel_info.get("channel_topics", []),
     }

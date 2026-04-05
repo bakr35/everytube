@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     # Optional: pull cookies live from an installed browser (no export needed).
     # Values: "chrome", "firefox", "safari", "edge", "brave", "chromium" — or leave empty.
     cookies_from_browser: str = ""
+    # Optional: YouTube Data API v3 key — enables channel metadata (creation date,
+    # country, custom URL, video count, topic categories). Leave empty to skip.
+    youtube_api_key: str = ""
 
     model_config = {"env_file": ".env"}
 

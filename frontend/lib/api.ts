@@ -1,14 +1,60 @@
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 
+export interface Chapter {
+  title: string;
+  start_time: number;
+  end_time: number;
+}
+
+export interface HeatmapPoint {
+  start_time: number;
+  end_time: number;
+  value: number;
+}
+
+export interface SponsorSegment {
+  segment: [number, number];
+  category: string;
+  actionType: string;
+  votes: number;
+  views: number;
+  UUID: string;
+}
+
 export interface Metadata {
   video_id: string;
   title: string;
   uploader: string;
+  channel_is_verified: boolean;
+  channel_follower_count: number | null;
   duration: number;
   thumbnail: string;
+  upload_date: string | null;
   view_count: number | null;
+  like_count: number | null;
+  dislike_count: number | null;
+  comment_count: number | null;
   available_qualities: string[];
+  hdr_types: string[];
   description: string;
+  tags: string[];
+  categories: string[];
+  license: string;
+  age_limit: number;
+  availability: string;
+  live_status: string;
+  has_captions: boolean;
+  caption_langs: string[];
+  auto_langs: string[];
+  chapters: Chapter[];
+  heatmap: HeatmapPoint[];
+  sponsor_segments: SponsorSegment[];
+  language: string;
+  channel_created: string;
+  channel_country: string;
+  channel_custom_url: string;
+  channel_video_count: number | null;
+  channel_topics: string[];
 }
 
 export interface Job {

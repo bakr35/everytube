@@ -76,12 +76,56 @@ class TranscriptResponse(BaseModel):
     full_text: str
 
 
+class SponsorSegment(BaseModel):
+    segment: list[float]
+    category: str
+    actionType: str = ""
+    votes: int = 0
+    views: int = 0
+    UUID: str = ""
+
+class Chapter(BaseModel):
+    title: str
+    start_time: float
+    end_time: float
+
+class HeatmapPoint(BaseModel):
+    start_time: float
+    end_time: float
+    value: float
+
 class MetadataResponse(BaseModel):
     video_id: str
     title: str
     uploader: str
+    channel_is_verified: bool = False
+    channel_follower_count: Optional[int] = None
     duration: int                # seconds
     thumbnail: str               # URL
-    view_count: Optional[int]
+    upload_date: Optional[str] = None   # YYYY-MM-DD
+    view_count: Optional[int] = None
+    like_count: Optional[int] = None
+    dislike_count: Optional[int] = None
+    comment_count: Optional[int] = None
     available_qualities: list[str]
+    hdr_types: list[str] = []
     description: str = ""
+    tags: list[str] = []
+    categories: list[str] = []
+    license: str = ""
+    age_limit: int = 0
+    availability: str = "public"
+    live_status: str = ""
+    has_captions: bool = False
+    caption_langs: list[str] = []
+    auto_langs: list[str] = []
+    chapters: list[Chapter] = []
+    heatmap: list[HeatmapPoint] = []
+    sponsor_segments: list[SponsorSegment] = []
+    language: str = ""
+    # Channel-level (YouTube Data API v3)
+    channel_created: str = ""          # ISO timestamp
+    channel_country: str = ""          # "🇨🇦 Canada"
+    channel_custom_url: str = ""       # "@handle"
+    channel_video_count: Optional[int] = None
+    channel_topics: list[str] = []     # ["Military", "Society", "Politics"]
