@@ -103,7 +103,7 @@ export default function UrlInput({ value, onChange, onDetected, onReset, collaps
       className="w-full relative"
     >
       {!collapsed && (
-        <p className="text-xs tracking-[0.25em] uppercase text-fg/30 mb-4 font-body">
+        <p className="text-xs tracking-[0.25em] uppercase text-stone-500 dark:text-fg/40 mb-4 font-body">
           Paste a YouTube link
         </p>
       )}
@@ -162,8 +162,8 @@ export default function UrlInput({ value, onChange, onDetected, onReset, collaps
             className="absolute top-full mt-3 left-0 right-0 bg-bg border border-fg/20 z-30"
           >
             <div className="flex items-center gap-2 px-4 py-2 border-b border-fg/10">
-              <Clock size={10} className="text-fg/30" />
-              <span className="text-[10px] tracking-widest uppercase font-body text-fg/30">
+              <Clock size={12} className="text-stone-400 dark:text-fg/40" />
+              <span className="text-xs tracking-widest uppercase font-body text-stone-500 dark:text-fg/40">
                 Recent Links
               </span>
             </div>
@@ -173,7 +173,7 @@ export default function UrlInput({ value, onChange, onDetected, onReset, collaps
                 onClick={() => selectRecent(url)}
                 className="flex items-center justify-between px-4 py-2.5 hover:bg-fg/5 cursor-pointer group border-b border-fg/5 last:border-0"
               >
-                <span className="text-xs font-body text-fg/50 group-hover:text-fg/80 truncate transition-colors">
+                <span className="text-xs font-body text-stone-500 dark:text-fg/50 group-hover:text-stone-900 dark:group-hover:text-fg/80 truncate transition-colors">
                   {url}
                 </span>
                 <button

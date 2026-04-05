@@ -41,7 +41,10 @@ class AudioNormalizeRequest(BaseModel):
 
 class TranscriptRequest(BaseModel):
     url: str
-    language: str = "en"
+    # language is kept for internal/SRT use but defaults to auto-detect
+    language: str = "auto"
+
+
 
 
 class QuranVerifyItem(BaseModel):

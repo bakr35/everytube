@@ -37,7 +37,7 @@ function RowSelect({
         value={value}
         onChange={e => onChange(e.target.value)}
         disabled={disabled}
-        className="appearance-none bg-white dark:bg-bg border border-stone-300 dark:border-fg/20 text-stone-800 dark:text-fg/70 text-[10px] font-body tracking-widest uppercase px-2.5 py-1.5 pr-6 cursor-pointer hover:border-stone-500 dark:hover:border-fg/40 focus:border-stone-700 dark:focus:border-lime focus:outline-none disabled:opacity-30 disabled:cursor-not-allowed transition-colors duration-150"
+        className="appearance-none bg-white dark:bg-bg border border-stone-300 dark:border-fg/20 text-stone-800 dark:text-fg/70 text-xs font-body tracking-widest uppercase px-2.5 py-1.5 pr-6 cursor-pointer hover:border-stone-500 dark:hover:border-fg/40 focus:border-stone-700 dark:focus:border-lime focus:outline-none disabled:opacity-30 disabled:cursor-not-allowed transition-colors duration-150"
       >
         {options.map(o => (
           <option key={o.value} value={o.value} className="bg-white dark:bg-bg">
@@ -120,10 +120,10 @@ function PlaylistRow({ video, mode }: { video: PlaylistVideo; mode: PlaylistMode
 
       {/* Title + duration */}
       <div className="flex-1 min-w-0" style={{ fontFamily: TRANSCRIPT_FONT }}>
-        <p className="text-[0.8rem] text-stone-800 dark:text-fg/80 truncate leading-snug">
+        <p className="text-xs text-stone-800 dark:text-fg/80 truncate leading-snug">
           {video.title}
         </p>
-        <p className="text-[10px] font-mono text-stone-400 dark:text-fg/25 mt-0.5">
+        <p className="text-xs font-mono text-stone-500 dark:text-fg/35 mt-0.5">
           {formatDuration(video.duration)}
         </p>
       </div>
@@ -181,7 +181,7 @@ function PlaylistRow({ video, mode }: { video: PlaylistVideo; mode: PlaylistMode
               )}
               <button
                 onClick={handleDownload}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-body tracking-widest uppercase font-bold border transition-all duration-150 bg-stone-900 text-white border-stone-900 hover:bg-stone-700 dark:bg-transparent dark:text-fg dark:border-fg/50 dark:hover:bg-fg dark:hover:text-bg dark:hover:border-fg whitespace-nowrap"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-body tracking-widest uppercase font-bold border transition-all duration-150 bg-stone-900 text-white border-stone-900 hover:bg-stone-700 dark:bg-transparent dark:text-fg dark:border-fg/50 dark:hover:bg-fg dark:hover:text-bg dark:hover:border-fg whitespace-nowrap"
               >
                 <Download size={9} />
                 {label}
@@ -199,7 +199,7 @@ function PlaylistRow({ video, mode }: { video: PlaylistVideo; mode: PlaylistMode
               transition={{ duration: 0.15 }}
               className="w-64 flex flex-col gap-1.5"
             >
-              <p className="text-[9px] font-body tracking-widest uppercase text-stone-400 dark:text-fg/30 truncate">
+              <p className="text-xs font-body tracking-widest uppercase text-stone-500 dark:text-fg/40 truncate">
                 {phaseLabel || job?.message || "Processing…"}
               </p>
               <div className="relative border border-fg/15 py-2.5 overflow-hidden">
@@ -212,7 +212,7 @@ function PlaylistRow({ video, mode }: { video: PlaylistVideo; mode: PlaylistMode
                 />
                 <div className="relative flex items-center justify-end px-3">
                   <span
-                    className="text-[10px] font-body font-bold tabular-nums transition-colors duration-200"
+                    className="text-xs font-body font-bold tabular-nums transition-colors duration-200"
                     style={{ color: pct > 85 ? "#000" : "rgb(var(--color-fg))" }}
                   >
                     {pct}%
@@ -237,13 +237,13 @@ function PlaylistRow({ video, mode }: { video: PlaylistVideo; mode: PlaylistMode
                   href={fileUrl(job.job_id)}
                   download={job.filename}
                   onClick={() => setSaved(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-body tracking-widest uppercase font-bold border border-lime bg-lime text-black hover:bg-stone-900 hover:border-stone-900 hover:text-white dark:hover:bg-fg dark:hover:border-fg dark:hover:text-bg transition-all duration-150 whitespace-nowrap"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-body tracking-widest uppercase font-bold border border-lime bg-lime text-black hover:bg-stone-900 hover:border-stone-900 hover:text-white dark:hover:bg-fg dark:hover:border-fg dark:hover:text-bg transition-all duration-150 whitespace-nowrap"
                 >
                   <Download size={9} />
                   Save .{job.filename.split(".").pop()?.toUpperCase()}
                 </a>
               ) : (
-                <span className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-body tracking-widest uppercase font-bold border border-lime bg-lime text-black whitespace-nowrap">
+                <span className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-body tracking-widest uppercase font-bold border border-lime bg-lime text-black whitespace-nowrap">
                   <Check size={9} />
                   Downloaded
                 </span>
@@ -269,12 +269,12 @@ function PlaylistRow({ video, mode }: { video: PlaylistVideo; mode: PlaylistMode
             >
               <button
                 onClick={handleDownload}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-body tracking-widest uppercase font-bold border border-red-400 text-red-500 hover:bg-red-500 hover:text-white transition-colors whitespace-nowrap"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-body tracking-widest uppercase font-bold border border-red-400 text-red-500 hover:bg-red-500 hover:text-white transition-colors whitespace-nowrap"
               >
                 <XCircle size={9} />
                 Retry
               </button>
-              <p className="text-[9px] text-red-400 truncate max-w-[200px]">
+              <p className="text-xs text-red-500 truncate max-w-[200px]">
                 {job?.error ?? error ?? "Unknown error"}
               </p>
             </motion.div>
@@ -305,7 +305,7 @@ export default function PlaylistCard({ playlist }: Props) {
             >
               {playlist.title}
             </span>
-            <span className="text-[10px] font-body tracking-widest uppercase text-fg/30">
+            <span className="text-xs font-body tracking-widest uppercase text-stone-500 dark:text-fg/40">
               {playlist.video_count} videos
               {playlist.uploader && ` · ${playlist.uploader}`}
             </span>
@@ -323,24 +323,24 @@ export default function PlaylistCard({ playlist }: Props) {
 
         {/* ── Mode selector ── */}
         <div className="flex items-center gap-2">
-          <span className="text-[10px] tracking-widest uppercase text-stone-500 dark:text-fg/30 font-body mr-1">
+          <span className="text-xs tracking-widest uppercase text-stone-500 dark:text-fg/40 font-body mr-1">
             Mode:
           </span>
           {(["video", "audio"] as PlaylistMode[]).map(m => (
             <button
               key={m}
               onClick={() => setMode(m)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] tracking-widest uppercase font-body border transition-colors duration-100 ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs tracking-widest uppercase font-body border transition-colors duration-100 ${
                 mode === m
                   ? "bg-stone-900 text-white border-stone-900 dark:bg-lime dark:text-black dark:border-lime"
-                  : "border-stone-400 text-stone-600 hover:border-stone-700 dark:border-fg/20 dark:text-fg/40 dark:hover:border-fg/50"
+                  : "border-stone-300 text-stone-600 hover:border-stone-700 hover:text-stone-900 dark:border-fg/20 dark:text-fg/40 dark:hover:border-fg/50"
               }`}
             >
               {m === "video" ? <Download size={10} /> : <Music size={10} />}
               {m === "video" ? "Video" : "Audio"}
             </button>
           ))}
-          <span className="ml-auto text-[10px] font-body tracking-widest uppercase text-fg/20 hidden sm:block">
+          <span className="ml-auto text-xs font-body tracking-widest uppercase text-stone-400 dark:text-fg/30 hidden sm:block">
             {mode === "video" ? "Resolution · Format · Download" : "Bitrate · Format · Download"}
           </span>
         </div>

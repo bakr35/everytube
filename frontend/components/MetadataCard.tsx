@@ -66,7 +66,6 @@ function HeatmapOverlay({ points }: { points: { value: number }[] }) {
   const max = Math.max(...points.map(p => p.value), 0.001);
   return (
     <div className="absolute bottom-0 left-0 right-0 flex items-end gap-px h-14 pointer-events-none">
-      {/* dark gradient base so bars are readable over any thumbnail */}
       <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
       {points.map((p, i) => (
         <div
@@ -88,19 +87,19 @@ function Section({ label, icon, count, children }: {
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="border-t border-fg/10">
+    <div className="border-t-2 border-t-lime/20 border-x-0 border-b-0 border border-fg/10">
       <button
         onClick={() => setOpen(p => !p)}
-        className="w-full flex items-center justify-between px-6 py-3 hover:bg-fg/[0.03] transition-colors"
+        className="w-full flex items-center justify-between px-6 py-3.5 hover:bg-fg/[0.04] transition-colors"
       >
-        <span className="flex items-center gap-2 text-[11px] font-body tracking-widest uppercase text-fg/40">
+        <span className="flex items-center gap-2 text-xs font-body tracking-widest uppercase text-fg/50">
           {icon}
           {label}
           {count != null && (
-            <span className="border border-fg/20 px-1.5 py-0 text-[10px]">{count}</span>
+            <span className="border border-lime/30 text-lime/60 px-1.5 py-0 text-[11px]">{count}</span>
           )}
         </span>
-        {open ? <ChevronUp size={12} className="text-fg/30" /> : <ChevronDown size={12} className="text-fg/30" />}
+        {open ? <ChevronUp size={13} className="text-fg/40" /> : <ChevronDown size={13} className="text-fg/40" />}
       </button>
       <AnimatePresence>
         {open && (
@@ -111,7 +110,7 @@ function Section({ label, icon, count, children }: {
             transition={{ duration: 0.15 }}
             className="overflow-hidden"
           >
-            <div className="px-6 pb-4">{children}</div>
+            <div className="px-6 pb-5">{children}</div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -131,6 +130,9 @@ export default function MetadataCard({ meta }: Props) {
 
   const isCreativeCommons = meta.license?.toLowerCase().includes("creative");
 
+  // First quality is always the best available
+  const bestQuality = meta.available_qualities[0];
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 40 }}
@@ -144,25 +146,24 @@ export default function MetadataCard({ meta }: Props) {
         {/* Thumbnail */}
         <div className="relative w-full md:w-72 aspect-video border-b md:border-b-0 md:border-r border-fg/20 overflow-hidden shrink-0">
           <Image src={meta.thumbnail} alt={meta.title} fill className="object-cover" unoptimized />
-          {/* Heatmap overlay — most replayed bars sit at the bottom of the thumbnail */}
           {meta.heatmap.length > 0 && <HeatmapOverlay points={meta.heatmap} />}
           <div className="absolute bottom-2 right-2 bg-bg/90 border border-fg/30 px-2 py-0.5 text-xs font-body font-bold tracking-widest z-10">
             {formatDuration(meta.duration)}
           </div>
           {meta.age_limit > 0 && (
-            <div className="absolute top-2 left-2 bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 tracking-widest z-10">
+            <div className="absolute top-2 left-2 bg-red-600 text-white text-[11px] font-bold px-1.5 py-0.5 tracking-widest z-10">
               {meta.age_limit}+
             </div>
           )}
           {meta.live_status === "was_live" && (
-            <div className="absolute top-2 right-2 bg-red-600/80 text-white text-[10px] font-bold px-1.5 py-0.5 tracking-widest z-10">
+            <div className="absolute top-2 right-2 bg-red-600/80 text-white text-[11px] font-bold px-1.5 py-0.5 tracking-widest z-10">
               LIVE
             </div>
           )}
           {meta.heatmap.length > 0 && (
             <div className="absolute top-2 left-2 flex items-center gap-1 bg-black/60 px-1.5 py-0.5 z-10">
-              <Zap size={8} className="text-lime" />
-              <span className="text-[9px] font-body tracking-widest uppercase text-lime/80">Most Replayed</span>
+              <Zap size={9} className="text-lime" />
+              <span className="text-[10px] font-body tracking-widest uppercase text-lime/80">Most Replayed</span>
             </div>
           )}
         </div>
@@ -177,82 +178,89 @@ export default function MetadataCard({ meta }: Props) {
 
           {/* Uploader row */}
           <div className="flex items-center gap-2 flex-wrap">
-            <User size={11} className="text-fg/30 shrink-0" />
-            <span className="text-sm font-body tracking-widest uppercase text-fg/50">{meta.uploader}</span>
+            <User size={12} className="text-fg/40 shrink-0" />
+            <span className="text-sm font-body tracking-widest uppercase text-fg/70 font-semibold">{meta.uploader}</span>
             {meta.channel_is_verified && (
-              <CheckCircle size={11} className="text-lime shrink-0" aria-label="Verified" />
+              <CheckCircle size={12} className="text-lime shrink-0" aria-label="Verified" />
             )}
             {meta.channel_follower_count != null && (
-              <span className="text-[11px] font-body text-fg/30 border border-fg/15 px-1.5 py-0">
+              <span className="text-xs font-body text-fg/50 border border-fg/20 px-2 py-0.5">
                 {fmt(meta.channel_follower_count)} subs
               </span>
             )}
             {isCreativeCommons && (
-              <span className="text-[9px] font-body tracking-widest border border-lime/40 text-lime/70 px-1.5 py-0">
+              <span className="text-[11px] font-body tracking-widest border border-lime/40 text-lime/70 px-1.5 py-0.5">
                 CC
               </span>
             )}
             {meta.has_captions && (
-              <span className="text-[9px] font-body tracking-widest border border-blue-400/40 text-blue-400/70 px-1.5 py-0">
+              <span className="text-[11px] font-body tracking-widest border border-blue-400/40 text-blue-400/70 px-1.5 py-0.5">
                 CC SUB
               </span>
             )}
             {meta.hdr_types.length > 0 && (
-              <span className="text-[9px] font-body tracking-widest border border-yellow-400/40 text-yellow-400/70 px-1.5 py-0">
+              <span className="text-[11px] font-body tracking-widest border border-yellow-400/40 text-yellow-400/70 px-1.5 py-0.5">
                 {meta.hdr_types[0]}
               </span>
             )}
             {meta.channel_topics.slice(0, 3).map(t => (
-              <span key={t} className="text-[9px] font-body tracking-widest border border-fg/15 text-fg/30 px-1.5 py-0">
+              <span key={t} className="text-[11px] font-body tracking-widest border border-fg/15 text-fg/40 px-1.5 py-0.5">
                 {t}
               </span>
             ))}
             {meta.channel_custom_url && (
-              <span className="text-[9px] font-mono text-fg/25 ml-1">
+              <span className="text-xs font-mono text-fg/35 ml-1">
                 {meta.channel_custom_url}
               </span>
             )}
           </div>
 
           {/* Stats row */}
-          <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-[11px] font-body tracking-widest uppercase text-fg/35">
+          <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs font-body tracking-widest uppercase text-fg/50">
             {meta.upload_date && (
               <span className="flex items-center gap-1.5">
-                <Clock size={10} />
+                <Clock size={12} />
                 {fmtDate(meta.upload_date)}
               </span>
             )}
             {meta.view_count != null && (
               <span className="flex items-center gap-1.5">
-                <Eye size={10} />
+                <Eye size={12} />
                 {fmt(meta.view_count)}
               </span>
             )}
             {meta.like_count != null && (
               <span className="flex items-center gap-1.5">
-                <ThumbsUp size={10} />
+                <ThumbsUp size={12} />
                 {fmt(meta.like_count)}
-                {likeRatio != null && <span className="text-fg/20">({likeRatio}%)</span>}
+                {likeRatio != null && <span className="text-fg/30">({likeRatio}%)</span>}
               </span>
             )}
             {meta.dislike_count != null && (
               <span className="flex items-center gap-1.5">
-                <ThumbsDown size={10} />
+                <ThumbsDown size={12} />
                 {fmt(meta.dislike_count)}
               </span>
             )}
             {meta.comment_count != null && (
               <span className="flex items-center gap-1.5">
-                <MessageSquare size={10} />
+                <MessageSquare size={12} />
                 {fmt(meta.comment_count)}
               </span>
             )}
           </div>
 
-          {/* Quality pills + HDR */}
+          {/* Quality pills */}
           <div className="flex flex-wrap gap-1.5">
             {meta.available_qualities.map(q => (
-              <span key={q} className="border border-fg/20 px-2 py-0.5 text-[10px] tracking-widest uppercase font-body text-fg/40">
+              <span
+                key={q}
+                className={`border px-2.5 py-1 text-xs tracking-widest uppercase font-body ${
+                  q === bestQuality
+                    ? "border-lime text-lime"
+                    : "border-fg/20 text-fg/45"
+                }`}
+              >
                 {q}
               </span>
             ))}
@@ -262,17 +270,20 @@ export default function MetadataCard({ meta }: Props) {
 
       {/* ── Chapters ── */}
       {meta.chapters.length > 0 && (
-        <Section label="Chapters" icon={<List size={10} />} count={meta.chapters.length}>
-          <div className="flex flex-col gap-0">
+        <Section label="Chapters" icon={<List size={11} />} count={meta.chapters.length}>
+          <div className="flex flex-col">
             {meta.chapters.map((c, i) => (
-              <div key={i} className="flex items-center gap-3 py-2 border-b border-fg/5 last:border-0">
-                <span className="text-[10px] font-mono text-lime/70 shrink-0 w-12">
+              <div
+                key={i}
+                className="group flex items-center gap-4 py-2.5 border-b border-fg/5 last:border-0 hover:border-l-2 hover:border-l-lime hover:pl-2 transition-all"
+              >
+                <span className="text-xs font-mono text-lime/80 shrink-0 w-12">
                   {fmtTime(c.start_time)}
                 </span>
-                <span className="text-xs font-body text-fg/60 truncate" style={{ fontFamily: ARABIC_FONT }}>
+                <span className="text-xs font-body text-fg/70 truncate" style={{ fontFamily: ARABIC_FONT }}>
                   {c.title}
                 </span>
-                <span className="text-[9px] font-mono text-fg/20 ml-auto shrink-0">
+                <span className="text-xs font-mono text-fg/35 ml-auto shrink-0">
                   {fmtTime(c.end_time - c.start_time)}
                 </span>
               </div>
@@ -283,15 +294,15 @@ export default function MetadataCard({ meta }: Props) {
 
       {/* ── SponsorBlock ── */}
       {meta.sponsor_segments.length > 0 && (
-        <Section label="SponsorBlock" icon={<Zap size={10} />} count={meta.sponsor_segments.length}>
-          <p className="text-[10px] font-body text-fg/30 mb-3">
+        <Section label="SponsorBlock" icon={<Zap size={11} />} count={meta.sponsor_segments.length}>
+          <p className="text-xs font-body text-fg/40 mb-3">
             {Math.round(sponsorTotal)}s of skippable content · {meta.sponsor_segments.length} segment{meta.sponsor_segments.length !== 1 ? "s" : ""}
           </p>
           <div className="flex flex-wrap gap-2">
             {meta.sponsor_segments.map((s, i) => (
               <span
                 key={i}
-                className={`text-[9px] font-body tracking-widest uppercase border px-2 py-0.5 ${SPONSOR_COLORS[s.category] ?? "bg-fg/5 text-fg/40 border-fg/20"}`}
+                className={`text-xs font-body tracking-widest uppercase border px-2.5 py-1 ${SPONSOR_COLORS[s.category] ?? "bg-fg/5 text-fg/50 border-fg/20"}`}
               >
                 {SPONSOR_LABELS[s.category] ?? s.category} {fmtTime(s.segment[0])}–{fmtTime(s.segment[1])}
               </span>
@@ -302,10 +313,10 @@ export default function MetadataCard({ meta }: Props) {
 
       {/* ── Tags ── */}
       {meta.tags.length > 0 && (
-        <Section label="Tags" icon={<Tag size={10} />} count={meta.tags.length}>
-          <div className="flex flex-wrap gap-1.5">
+        <Section label="Tags" icon={<Tag size={11} />} count={meta.tags.length}>
+          <div className="flex flex-wrap gap-2">
             {meta.tags.map((t, i) => (
-              <span key={i} className="text-[9px] font-body tracking-widest border border-fg/15 text-fg/35 px-2 py-0.5">
+              <span key={i} className="text-xs font-body tracking-wide border border-fg/20 text-fg/55 px-2.5 py-1 hover:border-fg/40 hover:text-fg/75 transition-colors">
                 {t}
               </span>
             ))}
@@ -315,22 +326,22 @@ export default function MetadataCard({ meta }: Props) {
 
       {/* ── Channel ── */}
       {(meta.channel_created || meta.channel_country || meta.channel_video_count != null || meta.channel_topics.length > 0) && (
-        <Section label="Channel" icon={<Tv2 size={10} />}>
-          <div className="flex flex-col gap-3">
+        <Section label="Channel" icon={<Tv2 size={11} />}>
+          <div className="flex flex-col gap-3.5">
 
             {meta.channel_custom_url && (
-              <div className="flex items-center gap-3">
-                <span className="text-[10px] font-body tracking-widest uppercase text-fg/25 w-24 shrink-0">Handle</span>
-                <span className="text-[11px] font-mono text-fg/60">{meta.channel_custom_url}</span>
+              <div className="flex items-center gap-4">
+                <span className="text-xs font-body tracking-widest uppercase text-fg/30 w-24 shrink-0">Handle</span>
+                <span className="text-xs font-mono text-fg/65">{meta.channel_custom_url}</span>
               </div>
             )}
 
             {meta.channel_created && (
-              <div className="flex items-center gap-3">
-                <span className="text-[10px] font-body tracking-widest uppercase text-fg/25 w-24 shrink-0">Created</span>
-                <span className="text-[11px] font-body text-fg/60">
+              <div className="flex items-center gap-4">
+                <span className="text-xs font-body tracking-widest uppercase text-fg/30 w-24 shrink-0">Created</span>
+                <span className="text-xs font-body text-fg/65">
                   {new Date(meta.channel_created).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
-                  <span className="text-fg/30 ml-2">
+                  <span className="text-fg/35 ml-2">
                     · {Math.floor((Date.now() - new Date(meta.channel_created).getTime()) / (1000 * 60 * 60 * 24 * 365))} years ago
                   </span>
                 </span>
@@ -338,25 +349,25 @@ export default function MetadataCard({ meta }: Props) {
             )}
 
             {meta.channel_country && (
-              <div className="flex items-center gap-3">
-                <span className="text-[10px] font-body tracking-widest uppercase text-fg/25 w-24 shrink-0">Country</span>
-                <span className="text-[11px] font-body text-fg/60">{meta.channel_country}</span>
+              <div className="flex items-center gap-4">
+                <span className="text-xs font-body tracking-widest uppercase text-fg/30 w-24 shrink-0">Country</span>
+                <span className="text-xs font-body text-fg/65">{meta.channel_country}</span>
               </div>
             )}
 
             {meta.channel_video_count != null && (
-              <div className="flex items-center gap-3">
-                <span className="text-[10px] font-body tracking-widest uppercase text-fg/25 w-24 shrink-0">Videos</span>
-                <span className="text-[11px] font-body text-fg/60">{meta.channel_video_count.toLocaleString()} uploaded</span>
+              <div className="flex items-center gap-4">
+                <span className="text-xs font-body tracking-widest uppercase text-fg/30 w-24 shrink-0">Videos</span>
+                <span className="text-xs font-body text-fg/65">{meta.channel_video_count.toLocaleString()} uploaded</span>
               </div>
             )}
 
             {meta.channel_topics.length > 0 && (
-              <div className="flex items-start gap-3">
-                <span className="text-[10px] font-body tracking-widest uppercase text-fg/25 w-24 shrink-0 pt-0.5">Topics</span>
+              <div className="flex items-start gap-4">
+                <span className="text-xs font-body tracking-widest uppercase text-fg/30 w-24 shrink-0 pt-0.5">Topics</span>
                 <div className="flex flex-wrap gap-1.5">
                   {meta.channel_topics.map((t, i) => (
-                    <span key={i} className="text-[10px] font-body tracking-widest border border-fg/15 text-fg/50 px-2 py-0.5">
+                    <span key={i} className="text-xs font-body tracking-widest border border-fg/20 text-fg/55 px-2.5 py-1">
                       {t}
                     </span>
                   ))}

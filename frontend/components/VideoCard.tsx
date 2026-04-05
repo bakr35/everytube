@@ -32,7 +32,7 @@ function Select({
 }) {
   return (
     <div className="flex flex-col gap-1.5 min-w-[120px]">
-      <span className="text-[10px] tracking-widest uppercase text-fg/30 font-body">{label}</span>
+      <span className="text-xs tracking-widest uppercase text-stone-500 dark:text-fg/40 font-body">{label}</span>
       <div className="relative">
         <select
           value={value}
@@ -127,7 +127,7 @@ export default function VideoCard({ url, meta, onDownloadStart, onDownloadComple
       {/* Action */}
       <div className="max-w-sm flex flex-col gap-1.5">
         {!job && (
-          <p className="text-[10px] font-mono text-fg/25 tracking-wide truncate">
+          <p className="text-xs font-mono text-stone-400 dark:text-fg/30 tracking-wide truncate">
             → {previewFilename}
           </p>
         )}

@@ -6,6 +6,9 @@ html {
   font-size: 110%;
 }
 
+/* Minimum readable size for any text — enforced globally */
+* { min-font-size: 0; }
+
 /* ── Light mode (default) — "Ink on Paper" ────────────────────────────────── */
 :root {
   --lime: #CCFF00;

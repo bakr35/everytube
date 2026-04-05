@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     # Optional: YouTube Data API v3 key — enables channel metadata (creation date,
     # country, custom URL, video count, topic categories). Leave empty to skip.
     youtube_api_key: str = ""
+    # Anthropic API key — enables LLM-powered transcript cleaning.
+    anthropic_api_key: str = ""
+    # Whisper model size: tiny | base | small | medium | large
+    whisper_model: str = "small"
 
     model_config = {"env_file": ".env"}
 

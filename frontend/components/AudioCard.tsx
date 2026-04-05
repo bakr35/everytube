@@ -88,7 +88,7 @@ function Select({
 }) {
   return (
     <div className="flex flex-col gap-1.5 min-w-[110px]">
-      <span className="text-[10px] tracking-widest uppercase text-fg/30 font-body">{label}</span>
+      <span className="text-xs tracking-widest uppercase text-stone-500 dark:text-fg/40 font-body">{label}</span>
       <div className="relative">
         <select
           value={value}
@@ -252,7 +252,7 @@ export default function AudioCard({ url, meta, sourceJobId }: Props) {
           <div className={`w-4 h-4 border flex items-center justify-center transition-colors duration-150 ${trimEnabled ? "border-lime bg-lime" : "border-stone-400 dark:border-fg/30"}`}>
             {trimEnabled && <Check size={10} className="text-black" strokeWidth={3} />}
           </div>
-          <span className="text-[10px] tracking-widest uppercase font-body text-stone-500 dark:text-fg/50 hover:text-stone-800 dark:hover:text-fg/80 transition-colors">
+          <span className="text-xs tracking-widest uppercase font-body text-stone-500 dark:text-fg/50 hover:text-stone-800 dark:hover:text-fg/80 transition-colors">
             Trim Audio
           </span>
         </button>
@@ -268,7 +268,7 @@ export default function AudioCard({ url, meta, sourceJobId }: Props) {
             >
               <div className="flex items-center gap-3 pt-1">
                 <div className="flex flex-col gap-1">
-                  <span className="text-[10px] tracking-widest uppercase text-stone-400 dark:text-fg/20 font-body">Start</span>
+                  <span className="text-xs tracking-widest uppercase text-stone-500 dark:text-fg/40 font-body">Start</span>
                   <input
                     type="text"
                     value={trimStart}
@@ -278,9 +278,9 @@ export default function AudioCard({ url, meta, sourceJobId }: Props) {
                     className={timeInputCls()}
                   />
                 </div>
-                <span className="text-stone-300 dark:text-fg/20 text-xs mt-5">→</span>
+                <span className="text-stone-400 dark:text-fg/30 text-sm mt-5">→</span>
                 <div className="flex flex-col gap-1">
-                  <span className="text-[10px] tracking-widest uppercase text-stone-400 dark:text-fg/20 font-body">End</span>
+                  <span className="text-xs tracking-widest uppercase text-stone-500 dark:text-fg/40 font-body">End</span>
                   <input
                     type="text"
                     value={trimEnd}
@@ -299,7 +299,7 @@ export default function AudioCard({ url, meta, sourceJobId }: Props) {
       {/* Action */}
       <div className="max-w-sm flex flex-col gap-1.5">
         {!job && (
-          <p className="text-[10px] font-mono text-fg/25 tracking-wide truncate">
+          <p className="text-xs font-mono text-stone-400 dark:text-fg/30 tracking-wide truncate">
             → {previewFilename}
           </p>
         )}
@@ -311,7 +311,7 @@ export default function AudioCard({ url, meta, sourceJobId }: Props) {
           disabled={trimInvalid}
         />
         {trimInvalid && (
-          <p className="text-red-500/80 text-[10px] font-body tracking-wide mt-1">
+          <p className="text-red-500 text-xs font-body tracking-wide mt-1">
             End time must be after Start time
           </p>
         )}

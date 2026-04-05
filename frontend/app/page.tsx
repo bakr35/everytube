@@ -87,12 +87,12 @@ export default function Home() {
         >
           YTDL
         </button>
-        <span className="text-[10px] tracking-[0.3em] uppercase text-fg/20 font-body hidden sm:block">
+        <span className="text-xs tracking-[0.3em] uppercase text-stone-400 dark:text-fg/30 font-body hidden sm:block">
           Download · Extract · Transcribe
         </span>
-        <div className="flex items-center gap-3 text-[10px] font-body tracking-widest uppercase">
+        <div className="flex items-center gap-3 text-xs font-body tracking-widest uppercase">
           {loading && (
-            <span className="inline-flex items-center gap-1.5 text-fg/20">
+            <span className="inline-flex items-center gap-1.5 text-stone-400 dark:text-fg/30">
               <span className="w-1.5 h-1.5 rounded-full bg-lime animate-pulse" />
               Fetching
             </span>
@@ -206,7 +206,7 @@ export default function Home() {
               className="border border-fg/10 p-8 flex items-center gap-4"
             >
               <div className="w-2 h-2 rounded-full bg-lime animate-ping" />
-              <span className="text-xs font-body tracking-widest uppercase text-fg/30">
+              <span className="text-xs font-body tracking-widest uppercase text-stone-500 dark:text-fg/40">
                 Fetching metadata…
               </span>
             </motion.div>
@@ -216,7 +216,7 @@ export default function Home() {
 
       {/* ── Footer ── */}
       <footer className="px-6 py-4 border-t border-fg/10">
-        <span className="text-[10px] font-body tracking-widest uppercase text-fg/15">
+        <span className="text-xs font-body tracking-widest uppercase text-stone-400 dark:text-fg/25">
           Powered by yt-dlp · FFmpeg · youtube-transcript-api
         </span>
       </footer>

@@ -14,6 +14,7 @@ build/
 # Backend temp files
 backend/temp/
 backend/downloads/
+backend/cache/
 
 # Node / Next.js
 node_modules/

@@ -182,11 +182,23 @@ export async function fetchPlaylistInfo(url: string): Promise<PlaylistInfo> {
   return res.json();
 }
 
-export async function fetchTranscript(url: string, language = "auto"): Promise<Transcript> {
+export interface WhisperJob {
+  job_id: string;
+  mode:   "whisper";
+  status: string;
+}
+
+export type TranscriptResult = Transcript | WhisperJob;
+
+export function isWhisperJob(r: TranscriptResult): r is WhisperJob {
+  return "job_id" in r;
+}
+
+export async function fetchTranscript(url: string): Promise<TranscriptResult> {
   const res = await fetch(`${BASE}/api/transcribe`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url, language }),
+    body: JSON.stringify({ url, language: "auto" }),
   });
   if (!res.ok) throw new Error((await res.json()).detail ?? "Transcription failed");
   return res.json();

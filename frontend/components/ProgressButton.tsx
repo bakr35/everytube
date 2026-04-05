@@ -56,7 +56,7 @@ export default function ProgressButton({ job, onStart, onReset, idleLabel, disab
     return (
       <motion.div layout initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
         {/* Stage label — always readable, sits above the fill bar */}
-        <p className="text-[10px] font-body tracking-widest uppercase text-stone-500 dark:text-fg/40 mb-1.5 truncate">
+        <p className="text-xs font-body tracking-widest uppercase text-stone-500 dark:text-fg/40 mb-1.5 truncate">
           {job?.message ?? "Processing…"}
         </p>
         <div className="relative border border-fg/20 py-3 overflow-hidden">

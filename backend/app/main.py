@@ -3,11 +3,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.core.config import settings
 from app.core.cleanup import start_cleanup_thread
+from app.core.cache import init_db
 from app.api import download, audio, transcribe, metadata, jobs, playlist
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Initialise SQLite cache (creates tables if they don't exist)
+    init_db()
     # Start background file cleanup (every 5 min, deletes files older than 30 min)
     start_cleanup_thread(interval_seconds=300)
     yield
