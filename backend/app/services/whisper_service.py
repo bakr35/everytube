@@ -1,10 +1,11 @@
 """
-Whisper-based transcription fallback (using faster-whisper / CTranslate2).
+Whisper-based transcription fallback with optional speaker diarization.
+
+Flow:
+  • If HUGGINGFACE_TOKEN is set  → WhisperX (transcribe + align + diarize)
+  • Otherwise                    → faster-whisper (transcribe only, no speakers)
 
 Used when a video has no YouTube captions.
-Flow: download audio → run Whisper locally → clean with Claude → cache.
-
-The WhisperModel is loaded once and reused across requests (lazy load).
 """
 
 import os
@@ -12,37 +13,53 @@ import threading
 import tempfile
 from pathlib import Path
 
-# Prevent crash when both PyTorch and CTranslate2 bundle their own OpenMP runtime.
-# Without this, macOS kills the process with "libiomp5.dylib already initialized".
-os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
-
 import yt_dlp
+
+# Prevent crash when PyTorch and CTranslate2 both bundle their own OpenMP runtime.
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
 from app.core.config import settings
 from app.core.jobs import create_job, update_job, JobStatus
 from app.core.cache import save_transcript
 from app.services.transcript_cleaner import clean_transcript
 
-# ── Whisper model (loaded once, lazily) ──────────────────────────────────────
+# ── Model cache (loaded once, lazily) ────────────────────────────────────────
 _model      = None
 _model_lock = threading.Lock()
 
 
+_use_whisperx = False   # set to True on first successful whisperx import
+
+
 def _get_model():
-    global _model
+    global _model, _use_whisperx
     if _model is None:
         with _model_lock:
             if _model is None:
-                from faster_whisper import WhisperModel
-                # cpu / int8 keeps memory low; swap to "float16" if you have GPU
-                _model = WhisperModel(settings.whisper_model, device="cpu", compute_type="int8")
+                if settings.huggingface_token:
+                    try:
+                        import whisperx
+                        _model = whisperx.load_model(
+                            settings.whisper_model, device="cpu", compute_type="int8"
+                        )
+                        _use_whisperx = True
+                    except Exception:
+                        # WhisperX unavailable (e.g. numpy/torch conflict) — fall back
+                        from faster_whisper import WhisperModel
+                        _model = WhisperModel(
+                            settings.whisper_model, device="cpu", compute_type="int8"
+                        )
+                else:
+                    from faster_whisper import WhisperModel
+                    _model = WhisperModel(
+                        settings.whisper_model, device="cpu", compute_type="int8"
+                    )
     return _model
 
 
-# ── Audio download (temp file, deleted after transcription) ──────────────────
+# ── Audio download ────────────────────────────────────────────────────────────
 
 def _download_audio(url: str, job_id: str) -> str:
-    """Download audio to a temp mp3 file. Returns the file path."""
     tmp_dir  = Path(tempfile.mkdtemp(prefix="whisper_"))
     out_tmpl = str(tmp_dir / "audio.%(ext)s")
 
@@ -83,15 +100,63 @@ def _download_audio(url: str, job_id: str) -> str:
     return str(max(files, key=lambda f: f.stat().st_mtime))
 
 
-# ── Whisper transcription ─────────────────────────────────────────────────────
+# ── WhisperX path (with diarization) ─────────────────────────────────────────
 
-def _transcribe(audio_path: str, job_id: str) -> dict:
-    """Run Whisper on an audio file. Returns {language, segments}."""
+def _transcribe_with_diarization(audio_path: str, job_id: str) -> dict:
+    import whisperx
+
+    update_job(job_id, progress=50, message="Loading Whisper model…")
+    model = _get_model()
+
+    update_job(job_id, progress=55, message="Transcribing audio…")
+    result = model.transcribe(audio_path, batch_size=4)
+    language = result.get("language", "en")
+
+    update_job(job_id, progress=68, message="Aligning words…")
+    align_model, metadata = whisperx.load_align_model(
+        language_code=language, device="cpu"
+    )
+    result = whisperx.align(
+        result["segments"], align_model, metadata, audio_path, device="cpu"
+    )
+
+    update_job(job_id, progress=78, message="Identifying speakers…")
+    diarize_pipeline = whisperx.DiarizationPipeline(
+        use_auth_token=settings.huggingface_token, device="cpu"
+    )
+    diarize_segments = diarize_pipeline(audio_path)
+    result = whisperx.assign_word_speakers(diarize_segments, result)
+
+    # Build segments with speaker labels
+    # Map raw pyannote labels ("SPEAKER_00") → friendly ("Speaker 1")
+    speaker_map: dict[str, str] = {}
+
+    segments = []
+    for seg in result.get("segments", []):
+        text = seg.get("text", "").strip()
+        if not text:
+            continue
+        raw_spkr = seg.get("speaker", "")
+        if raw_spkr and raw_spkr not in speaker_map:
+            speaker_map[raw_spkr] = f"Speaker {len(speaker_map) + 1}"
+        friendly = speaker_map.get(raw_spkr) if raw_spkr else None
+        segments.append({
+            "text":     text,
+            "start":    round(seg["start"], 3),
+            "duration": round(seg["end"] - seg["start"], 3),
+            "speaker":  friendly,
+        })
+
+    return {"language": language, "segments": segments}
+
+
+# ── faster-whisper path (no diarization) ─────────────────────────────────────
+
+def _transcribe_basic(audio_path: str, job_id: str) -> dict:
     update_job(job_id, progress=50, message="Loading Whisper model…")
     model = _get_model()
 
     update_job(job_id, progress=55, message="Transcribing audio… this may take a few minutes")
-
     segs, info = model.transcribe(audio_path, beam_size=5)
 
     segments = []
@@ -102,42 +167,31 @@ def _transcribe(audio_path: str, job_id: str) -> dict:
                 "text":     text,
                 "start":    round(seg.start, 3),
                 "duration": round(seg.end - seg.start, 3),
+                "speaker":  None,
             })
 
-    return {
-        "language": info.language,
-        "segments": segments,
-    }
+    return {"language": info.language, "segments": segments}
 
 
 # ── Background job ────────────────────────────────────────────────────────────
 
 def run_whisper_job(job_id: str, url: str, video_id: str) -> None:
-    """
-    Full Whisper pipeline run in a background thread:
-      1. Download audio to temp file
-      2. Transcribe with Whisper
-      3. Clean with Claude
-      4. Save to transcript cache
-      5. Mark job done
-    """
     audio_path = None
     try:
         update_job(job_id, status=JobStatus.RUNNING, progress=2,
                    message="Starting audio download…")
 
-        # 1 — download
         audio_path = _download_audio(url, job_id)
 
-        # 2 — transcribe
-        whisper_result = _transcribe(audio_path, job_id)
+        if settings.huggingface_token and _use_whisperx:
+            whisper_result = _transcribe_with_diarization(audio_path, job_id)
+        else:
+            whisper_result = _transcribe_basic(audio_path, job_id)
 
-        # 3 — clean
         update_job(job_id, progress=88, message="Cleaning transcript…")
         raw_text  = " ".join(s["text"] for s in whisper_result["segments"])
         full_text = clean_transcript(raw_text)
 
-        # 4 — cache
         transcript_data = {
             "video_id": video_id,
             "language": whisper_result["language"],
@@ -146,7 +200,6 @@ def run_whisper_job(job_id: str, url: str, video_id: str) -> None:
         }
         save_transcript(transcript_data)
 
-        # 5 — done
         update_job(job_id, status=JobStatus.DONE, progress=100,
                    message="Transcription complete")
 
@@ -155,7 +208,6 @@ def run_whisper_job(job_id: str, url: str, video_id: str) -> None:
                    message="Transcription failed", error=str(exc))
 
     finally:
-        # Always delete the temp audio file
         if audio_path and os.path.exists(audio_path):
             try:
                 os.remove(audio_path)
@@ -167,7 +219,6 @@ def run_whisper_job(job_id: str, url: str, video_id: str) -> None:
 
 
 def start_whisper_job(url: str, video_id: str) -> str:
-    """Create a job, start the background thread, return the job_id."""
     job = create_job()
     t   = threading.Thread(
         target=run_whisper_job,

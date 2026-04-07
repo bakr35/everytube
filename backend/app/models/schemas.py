@@ -70,6 +70,8 @@ class TranscriptSegment(BaseModel):
     start: float
     duration: float
     text: str
+    speaker: str | None = None   # e.g. "Speaker 1", "Speaker 2"
+    is_cue:  bool = False         # True for inline audience cues like (Laughter)
 
 
 class TranscriptResponse(BaseModel):

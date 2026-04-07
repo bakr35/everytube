@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     # Whisper model size: tiny | base | small | medium | large
     whisper_model: str = "small"
+    # HuggingFace token — enables WhisperX speaker diarization (pyannote).
+    # Get a free token at huggingface.co/settings/tokens (Read scope).
+    # Also accept pyannote terms at huggingface.co/pyannote/speaker-diarization-3.1
+    huggingface_token: str = ""
 
     model_config = {"env_file": ".env"}
 

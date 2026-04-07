@@ -99,10 +99,67 @@ _BRAND_PATTERNS: list[tuple[str, str]] = [
     (r'\b(?<!\w)ide\b(?!\w)',           'IDE'),
     (r'\b(?<!\w)ui\b(?!\w)',            'UI'),
     (r'\b(?<!\w)ux\b(?!\w)',            'UX'),
+    # ── ASR-split compound words ──────────────────────────────────────────────
+    # ASR frequently splits compound words; the split form is essentially never
+    # the intended meaning in transcription context.
+    (r'\bwork\s+flow\b',               'workflow'),
+    (r'\bdata\s+base\b',               'database'),
+    (r'\bfire\s+wall\b',               'firewall'),
+    (r'\bkey\s+board\b',               'keyboard'),
+    (r'\bkey\s+note\b',                'keynote'),
+    (r'\bnet\s+work\b',                'network'),
+    (r'\bover\s+all\b',                'overall'),
+    (r'\bback\s+end\b',                'backend'),
+    (r'\bfront\s+end\b',               'frontend'),
+    (r'\bfull\s+stack\b',              'full-stack'),
+    (r'\bopen\s+source\b',             'open-source'),
+    (r'\bread\s+me\b',                 'README'),
+    (r'\btime\s+stamp\b',              'timestamp'),
+    (r'\btime\s+line\b',               'timeline'),
+    (r'\bscreen\s+shot\b',             'screenshot'),
+    (r'\bweb\s+site\b',                'website'),
+    (r'\bweb\s+hook\b',                'webhook'),
+    (r'\bcheck\s+box\b',               'checkbox'),
+    (r'\bdrop\s+down\b',               'dropdown'),
+    (r'\bpop\s+up\b',                  'pop-up'),
+    (r'\bset\s+up\b(?=\s+(?:a|an|the|your|my|our|their|this|that|is|was)\b)', 'setup'),
+    (r'\blog\s+in\b(?=\s+(?:page|screen|form|button|flow|process)\b)',         'login'),
+    (r'\bsign\s+in\b(?=\s+(?:page|screen|form|button|flow|process)\b)',        'sign-in'),
+    (r'\bsign\s+up\b(?=\s+(?:page|screen|form|button|flow|process)\b)',        'sign-up'),
+    # ── ASR homophones (wrong form essentially never correct in context) ───────
+    # Only add pairs where the "wrong" form is near-impossible in normal speech.
+    (r'\bpre[\s\-]cut\s+hands?\b',     'precut hams'),   # ASR: "ham" → "hand"
+    (r'\bpre[\s\-]cut\s+palms?\b',     'pre-cut hams'),  # ASR: "ham" → "palm" (this specific talk)
+    (r'\biced\s+team\b',               'iced tea'),       # "I'd like some iced team"
+    (r'\beye\s+scream\b',              'ice cream'),
+    (r'\bwrap\s+per\b',                'wrapper'),
+    (r'\bex\s+port\b(?=\s+(?:the|a|an|your|my|our|this|that|it|them|data|file)\b)', 'export'),
+    (r'\bim\s+port\b(?=\s+(?:the|a|an|your|my|our|this|that|it|them|data|file)\b)', 'import'),
 ]
 
 # Noise segment pattern (music markers, applause, etc.)
 _NOISE_RE = re.compile(r'^\s*[\[♪♫<][^\]>]*[\]>]?\s*$|^\s*[♪♫]\s*$', re.UNICODE)
+
+# Maps raw caption noise text → inline audience cue marker
+_AUDIENCE_CUES: list[tuple[re.Pattern, str]] = [
+    (re.compile(r'\blaughter\b',  re.IGNORECASE), '(Laughter)'),
+    (re.compile(r'\bapplause\b',  re.IGNORECASE), '(Applause)'),
+    (re.compile(r'\bmusic\b',     re.IGNORECASE), '(Music)'),
+    (re.compile(r'\bcheering\b',  re.IGNORECASE), '(Cheering)'),
+    (re.compile(r'\bclapping\b',  re.IGNORECASE), '(Applause)'),
+    (re.compile(r'[♪♫]',                        ), '(Music)'),
+]
+
+
+def _extract_audience_cue(text: str) -> str | None:
+    """
+    Convert a noise segment like "[Laughter]" or "♪" into a readable inline
+    cue like "(Laughter)". Returns None if the noise has no audience meaning.
+    """
+    for pattern, marker in _AUDIENCE_CUES:
+        if pattern.search(text):
+            return marker
+    return None
 
 # Subtitle credit lines injected by TED / community translators — not spoken content
 _CREDIT_RE = re.compile(
@@ -150,98 +207,6 @@ def _apply_brand_corrections(text: str) -> str:
     return text
 
 
-def _fix_capitalization(text: str) -> str:
-    """
-    - Capitalise first character of the whole text.
-    - Capitalise the first letter after a sentence-ending punctuation mark.
-    - Correct standalone lowercase 'i' → 'I'.
-    """
-    if not text:
-        return text
-
-    # Capitalise first letter
-    text = text[0].upper() + text[1:]
-
-    # Capitalise after . ! ?  (but not after abbreviations like "U.S.")
-    def _cap(m: re.Match) -> str:
-        return m.group(1) + m.group(2).upper()
-
-    text = re.sub(r'([.!?]\s+)([a-z])', _cap, text)
-
-    # Standalone 'i' → 'I'
-    text = re.sub(r'(?<!\w)i(?!\w)', 'I', text)
-
-    return text
-
-
-def _remove_filler_sounds(text: str) -> str:
-    """
-    Remove common filler sounds that appear in auto-generated captions.
-    Operates on the joined full text only (not on per-segment text).
-    """
-    # um, uh, hmm at word boundaries — remove with any surrounding spaces
-    text = re.sub(r'\b(um+|uh+|hmm+|mm+|ah+|er+)\b,?\s*', '', text, flags=re.IGNORECASE)
-    # Remove duplicate consecutive words (e.g., "the the")
-    text = re.sub(r'\b(\w+)\s+\1\b', r'\1', text, flags=re.IGNORECASE)
-    # Clean up extra spaces left by removals
-    text = re.sub(r' {2,}', ' ', text).strip()
-    return text
-
-
-def _reconstruct_full_text(segments: list[dict]) -> str:
-    """
-    Build a clean, readable full-text from raw segments:
-      1. Join cleaned segment texts.
-      2. Remove noise (music / applause markers).
-      3. Apply brand corrections.
-      4. Fix capitalization.
-      5. Remove filler sounds.
-      6. Group into paragraphs (~4 sentences, falling back to word-count if no punctuation).
-    """
-    # Filter noise segments and subtitle credits; clean and join the rest
-    clean_parts: list[str] = []
-    for s in segments:
-        t = _clean_segment(s['text'])
-        if t and not _NOISE_RE.match(t) and not t.startswith('>>') and not _CREDIT_RE.match(t):
-            clean_parts.append(t)
-
-    raw = ' '.join(clean_parts)
-    raw = re.sub(r' {2,}', ' ', raw).strip()
-
-    if not raw:
-        return ''
-
-    # Brand corrections on joined text (catches cross-segment brand names)
-    raw = _apply_brand_corrections(raw)
-    raw = _fix_capitalization(raw)
-    raw = _remove_filler_sounds(raw)
-
-    # ── Paragraph grouping ────────────────────────────────────────────────────
-    SENTENCES_PER_PARA = 4
-    WORDS_PER_PARA     = 80   # fallback when text has no punctuation
-
-    # Split on sentence-ending punctuation
-    sentence_splits = re.split(r'(?<=[.!?])\s+', raw)
-    sentences = [s.strip() for s in sentence_splits if s.strip()]
-
-    if len(sentences) <= 1:
-        # No sentence punctuation detected — fall back to word-count chunking
-        words = raw.split()
-        chunks = [
-            ' '.join(words[i:i + WORDS_PER_PARA])
-            for i in range(0, len(words), WORDS_PER_PARA)
-        ]
-        return '\n\n'.join(chunks)
-
-    # Group sentences into paragraphs
-    paras: list[str] = []
-    for i in range(0, len(sentences), SENTENCES_PER_PARA):
-        chunk = sentences[i:i + SENTENCES_PER_PARA]
-        paras.append(' '.join(chunk))
-
-    return '\n\n'.join(paras)
-
-
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def fetch_transcript(url: str, language: str = "auto") -> dict:
@@ -285,16 +250,49 @@ def fetch_transcript(url: str, language: str = "auto") -> dict:
 
     raw = target.fetch()
 
-    # Clean each segment's text; drop noise and subtitle credit lines
+    # Clean each segment's text; drop noise and subtitle credit lines.
+    # Strip YouTube ">>" speaker-change markers from text but do NOT assign
+    # speaker labels — YouTube's ">>" only means "a change occurred" and cannot
+    # reliably identify which person is speaking. Speaker labels come from
+    # WhisperX diarization only (Whisper path).
     segments = []
     for s in raw:
         t = _clean_segment(s.text)
-        if t and not _NOISE_RE.match(t) and not _CREDIT_RE.match(t):
-            segments.append({"text": t, "start": s.start, "duration": s.duration})
+        if not t or _CREDIT_RE.match(t):
+            continue
+
+        # Noise segment — convert known audience cues to inline markers,
+        # drop everything else (music stings, etc. with no audience meaning)
+        if _NOISE_RE.match(t):
+            cue = _extract_audience_cue(t)
+            if cue:
+                segments.append({
+                    "text":     cue,
+                    "start":    s.start,
+                    "duration": s.duration,
+                    "speaker":  None,
+                    "is_cue":   True,
+                })
+            continue
+
+        # Strip ">>" prefix without assigning a speaker
+        if t.startswith(">>"):
+            t = re.sub(r'^>>\s*', '', t).strip()
+            if not t:
+                continue
+
+        segments.append({
+            "text":     t,
+            "start":    s.start,
+            "duration": s.duration,
+            "speaker":  None,
+        })
 
     # Build raw joined text then pass through LLM cleaner
     raw_joined = " ".join(s["text"] for s in segments)
     full_text   = clean_transcript(raw_joined)
+    # Safety net: enforce brand name casing after Claude (e.g. "openai" → "OpenAI")
+    full_text   = _apply_brand_corrections(full_text)
 
     result = {
         "video_id": video_id,

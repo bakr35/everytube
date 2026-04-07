@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   FileText, Copy, Check, ChevronDown, ChevronUp,
-  Search, X, Download, Clock, ArrowUp, ArrowDown, ShieldOff,
+  Search, X, Download, Clock, ArrowUp, ArrowDown, ShieldOff, Users,
 } from "lucide-react";
 import {
   fetchTranscript, pollJob, isWhisperJob,
@@ -55,13 +55,41 @@ const QURAN_PHRASES = new RegExp(
    "الٓمٓ","الٓرٰ","طسٓمٓ","يسٓ"].join("|")
 );
 const NOISE_SEG_RE = /^\s*[\[♪♫][^\]]*\]?\s*$|^\s*[♪♫]\s*$/;
-const TRANSCRIPT_FONT = 'var(--font-ibm-arabic, "IBM Plex Sans Arabic", "Segoe UI", "Tahoma", sans-serif)';
+const TRANSCRIPT_FONT_MONO = 'ui-monospace, "Cascadia Code", "Source Code Pro", "Courier New", monospace';
+const TRANSCRIPT_FONT_RTL  = 'var(--font-ibm-arabic, "IBM Plex Sans Arabic", "Tahoma", sans-serif)';
 
 function metaIsQuranic(title?: string, uploader?: string, description?: string) {
   return QURAN_KEYWORDS.test(title ?? "") || QURAN_KEYWORDS.test(uploader ?? "") || QURAN_KEYWORDS.test(description ?? "");
 }
-function transcriptIsQuranic(segments: TranscriptSegment[]) {
-  return QURAN_PHRASES.test(segments.slice(0, 20).map(s => s.text).join(" "));
+// Require ≥3 distinct phrase matches across the full transcript.
+// A speech that opens with Bismillah scores 1 → not blocked.
+// Actual recitation scores many → blocked.
+function transcriptIsQuranic(segments: TranscriptSegment[]): boolean {
+  const fullText = segments.map(s => s.text).join(" ");
+  let matches = 0;
+  // Count how many distinct phrases appear (each phrase counts once)
+  const phrases = ["بِسْمِ ٱللَّهِ","بسم الله الرحمن الرحيم","صدق الله",
+    "ٱلْحَمْدُ لِلَّهِ","الحمد لله رب العالمين",
+    "الٓمٓ","الٓرٰ","طسٓمٓ","يسٓ"];
+  for (const phrase of phrases) {
+    if (fullText.includes(phrase)) matches++;
+    if (matches >= 3) return true;
+  }
+  return false;
+}
+
+// ── Speaker colours (cycles if > 6 speakers) ─────────────────────────────────
+const SPEAKER_COLOURS = [
+  "text-lime",
+  "text-sky-400",
+  "text-orange-400",
+  "text-violet-400",
+  "text-rose-400",
+  "text-emerald-400",
+];
+function speakerColour(label: string): string {
+  const n = parseInt(label.replace(/\D/g, ""), 10) || 1;
+  return SPEAKER_COLOURS[(n - 1) % SPEAKER_COLOURS.length];
 }
 
 // ── Paragraph grouping ────────────────────────────────────────────────────────
@@ -158,13 +186,24 @@ function buildExportFilename(title: string | undefined, lang: string, ext: strin
   return `${safe}_Transcript_${lang.toUpperCase()}.${ext}`;
 }
 
-function QuranicBarrier({ triggeredBy }: { triggeredBy: "meta" | "content" }) {
+function QuranicBarrier({ triggeredBy, onOverride }: {
+  triggeredBy: "meta" | "content";
+  onOverride?: () => void;
+}) {
   return (
-    <div className="py-4 flex items-center justify-center gap-2">
-      <ShieldOff size={14} className="text-red-500 shrink-0" />
-      <p className="text-xs font-body tracking-wide text-red-500 whitespace-nowrap">
-        Quranic recitations are blocked — please use verified text sources.
-      </p>
+    <div className="py-4 flex flex-col items-center gap-3">
+      <div className="flex items-center gap-2">
+        <ShieldOff size={14} className="text-red-500 shrink-0" />
+        <p className="text-xs font-body tracking-wide text-red-500">
+          Quranic recitations are blocked — please use verified text sources.
+        </p>
+      </div>
+      {triggeredBy === "content" && onOverride && (
+        <button onClick={onOverride}
+          className="text-[11px] font-body tracking-widest uppercase border border-stone-400 text-stone-500 hover:border-stone-700 hover:text-stone-800 dark:border-fg/20 dark:text-fg/40 dark:hover:border-fg/50 dark:hover:text-fg px-3 py-1.5 transition-colors">
+          This is not a recitation — show anyway
+        </button>
+      )}
     </div>
   );
 }
@@ -225,6 +264,7 @@ export default function TranscriptCard({ url, title, uploader, description, vide
   const [showTimestamps,   setShowTimestamps]    = useState(false);
   const [showDownloadMenu, setShowDownloadMenu]  = useState(false);
   const [activeMatchIndex, setActiveMatchIndex]  = useState(0);
+  const [showSpeakers,     setShowSpeakers]      = useState(true);
 
   const [isQuranic,    setIsQuranic]    = useState(() => metaIsQuranic(title, uploader, description));
   const [quranTrigger, setQuranTrigger] = useState<"meta"|"content">(() =>
@@ -255,6 +295,22 @@ export default function TranscriptCard({ url, title, uploader, description, vide
   const paragraphs = useMemo(() => {
     if (!transcript) return [] as Paragraph[];
     return groupIntoParagraphs(transcript.segments);
+  }, [transcript]);
+
+  // ── Speaker-aware paragraphs (reader view with speakers) ─────────────────
+  // Each entry: { speaker, text } — consecutive same-speaker segments merged
+  const speakerBlocks = useMemo(() => {
+    if (!transcript) return [] as { speaker: string | null; text: string }[];
+    const blocks: { speaker: string | null; text: string }[] = [];
+    for (const seg of transcript.segments) {
+      const last = blocks[blocks.length - 1];
+      if (last && last.speaker === (seg.speaker ?? null)) {
+        last.text += " " + seg.text;
+      } else {
+        blocks.push({ speaker: seg.speaker ?? null, text: seg.text });
+      }
+    }
+    return blocks;
   }, [transcript]);
 
   // ── Search ────────────────────────────────────────────────────────────────
@@ -361,10 +417,9 @@ export default function TranscriptCard({ url, title, uploader, description, vide
     setShowDownloadMenu(false);
   };
 
-  const readerStyle: React.CSSProperties = {
-    fontFamily: TRANSCRIPT_FONT, fontSize: "0.9rem", lineHeight: isRtl ? "1.9" : "2.2",
-    ...(isRtl ? { textAlign: "right" as const, direction: "rtl" as const } : {}),
-  };
+  const readerStyle: React.CSSProperties = isRtl
+    ? { fontFamily: TRANSCRIPT_FONT_RTL,  fontSize: "0.95rem", lineHeight: "1.9", textAlign: "right" as const, direction: "rtl" as const }
+    : { fontFamily: TRANSCRIPT_FONT_MONO, fontSize: "0.925rem", lineHeight: "1.7", fontWeight: "600" };
 
   const langBadge = (transcript?.language ?? "").toUpperCase();
 
@@ -388,6 +443,19 @@ export default function TranscriptCard({ url, title, uploader, description, vide
 
         {transcript && !isQuranic && (
           <div className="flex items-center gap-1.5 shrink-0">
+
+            {/* Speaker toggle — only shown when transcript has speaker data */}
+            {transcript.segments.some(s => s.speaker) && (
+              <button onClick={() => setShowSpeakers(p => !p)} title="Toggle speakers"
+                className={`flex items-center gap-1.5 border px-2.5 py-1.5 text-xs tracking-widest uppercase font-body transition-colors duration-150 ${
+                  showSpeakers
+                    ? "border-stone-900 text-stone-900 dark:border-lime dark:text-lime"
+                    : "border-stone-300 text-stone-500 hover:border-stone-700 hover:text-stone-800 dark:border-fg/20 dark:text-fg/40 dark:hover:border-fg/50 dark:hover:text-fg/60"
+                }`}>
+                <Users size={11} /><span className="hidden sm:block">Speakers</span>
+              </button>
+            )}
+
             <button onClick={() => setShowTimestamps(p => !p)} title="Toggle timestamps"
               className={`flex items-center gap-1.5 border px-2.5 py-1.5 text-xs tracking-widest uppercase font-body transition-colors duration-150 ${
                 showTimestamps
@@ -465,7 +533,10 @@ export default function TranscriptCard({ url, title, uploader, description, vide
         </AnimatePresence>
 
         {isQuranic ? (
-          <QuranicBarrier triggeredBy={quranTrigger} />
+          <QuranicBarrier
+            triggeredBy={quranTrigger}
+            onOverride={quranTrigger === "content" ? () => setIsQuranic(false) : undefined}
+          />
         ) : (
           <>
             {/* Fetch / Re-fetch button */}
@@ -494,7 +565,7 @@ export default function TranscriptCard({ url, title, uploader, description, vide
                   className="border border-stone-200 bg-white dark:border-fg/10 dark:bg-card/[0.015]">
                   <div className={`transition-all duration-300 ${expanded ? "max-h-[70vh] overflow-y-auto" : "max-h-80 overflow-hidden"}`}
                     dir={isRtl ? "rtl" : "ltr"}>
-                    <div className="max-w-[750px] mx-auto w-full">
+                    <div className="w-full">
 
                       {showTimestamps ? (
                         <div className="px-5 py-4" style={{ direction: "ltr" }}>
@@ -518,7 +589,26 @@ export default function TranscriptCard({ url, title, uploader, description, vide
                             </div>
                           ))}
                         </div>
+                      ) : showSpeakers && speakerBlocks.some(b => b.speaker) ? (
+                        // ── Speaker view ──────────────────────────────────
+                        <div className="px-5 py-5 text-stone-800 dark:text-fg/80">
+                          {speakerBlocks.map((block, bi) => (
+                            <div key={bi} className="mb-5 last:mb-0">
+                              {block.speaker && (
+                                <div className={`text-[0.7rem] font-bold tracking-[0.2em] uppercase mb-1 select-none ${speakerColour(block.speaker)}`}>
+                                  {block.speaker}
+                                </div>
+                              )}
+                              <p style={readerStyle}>
+                                <Highlighted text={block.text} query={searchQuery}
+                                  matchOffset={searchInfo.blockOffsets[bi] ?? 0}
+                                  activeMatchIndex={activeMatchIndex} />
+                              </p>
+                            </div>
+                          ))}
+                        </div>
                       ) : (
+                        // ── Clean reader view ─────────────────────────────
                         <div className="px-5 py-5 text-stone-800 dark:text-fg/80">
                           {cleanParagraphs.map((para, pi) => (
                             <p key={pi} className="mb-5 last:mb-0" style={readerStyle}>

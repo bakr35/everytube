@@ -37,12 +37,32 @@ using the rules of the transcript's language.
 (e.g. "open a i" → "OpenAI"). Only fix names that are clearly mis-transcribed.
 5. PUNCTUATION — Add missing sentence-end punctuation where clearly needed. \
 Follow the punctuation conventions of the transcript's language.
-6. NOISE — Remove caption noise markers like [Music], [Applause], [Laughter].
+6. QUOTATION MARKS — When the speaker clearly quotes someone verbatim \
+(e.g. "she said courage is...", "he told the crowd..."), add quotation marks \
+around the quoted words and a comma before the attribution. \
+Example: She said, "Courage is to tell the story of who you are with your whole heart."
+7. HOMOPHONES — Fix obvious word mishearings that produce nonsense in context \
+(e.g. "pre-cut hands" where context makes clear it should be "precut hams"). \
+Only correct when the original word makes no sense and the intended word is unambiguous.
+8. HYPHENATION — Hyphenate compound modifiers that appear before a noun \
+(e.g. "sandy haired girl" → "sandy-haired girl", \
+"long suffering husband" → "long-suffering husband").
+9. AUDIENCE CUES — Preserve markers like (Laughter), (Applause), and (Music) \
+exactly where they appear. Do NOT remove them, move them, or reformat them. \
+These are positional cues that matter for readability and tone.
+10. FILLER SOUNDS — Remove standalone filler sounds (um, uh, hmm, erm) that \
+interrupt the flow of a sentence. Only remove them when they stand alone and \
+do not carry meaning. Do NOT remove "well", "now", "so", or hesitations that \
+are part of the speaker's natural rhetorical style.
+11. COMMAS AROUND PARENTHETICALS — Add comma pairs around adverbial phrases \
+that interrupt the main clause \
+(e.g. "I am fortunately and frustratingly still the same" → \
+"I am, fortunately and frustratingly, still the same").
 
 FORBIDDEN:
 - Do NOT change any word the speaker said.
 - Do NOT rephrase, paraphrase, or improve any sentence.
-- Do NOT add or remove words (except noise markers and filler sounds: um, uh, hmm).
+- Do NOT add or remove words (other than filler sounds per rule 10 above).
 - Do NOT add headings, bullet points, labels, or explanations.
 - Do NOT comment on the language, the content, or your process.
 

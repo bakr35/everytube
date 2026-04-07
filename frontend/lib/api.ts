@@ -70,6 +70,8 @@ export interface TranscriptSegment {
   start: number;
   duration: number;
   text: string;
+  speaker?: string | null;
+  is_cue?: boolean;
 }
 
 export interface Transcript {
