@@ -402,13 +402,18 @@ def get_metadata(url: str) -> dict:
     # Availability label
     availability = info.get("availability") or "public"
 
-    # SponsorBlock + Dislikes (best-effort, don't fail if down)
-    sponsor_segments = _fetch_sponsorblock(video_id) if video_id else []
-    dislike_data     = _fetch_dislikes(video_id)     if video_id else None
+    # SponsorBlock + Dislikes + Channel info — fetch in parallel via threads
+    # so three sequential network calls don't add up to 14+ seconds of blocking.
+    import concurrent.futures
+    channel_id = info.get("channel_id", "")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+        f_sponsor  = pool.submit(_fetch_sponsorblock, video_id) if video_id else None
+        f_dislikes = pool.submit(_fetch_dislikes,     video_id) if video_id else None
+        f_channel  = pool.submit(get_channel_info, channel_id)
 
-    # Channel metadata via YouTube Data API v3 (skipped if no API key)
-    channel_id   = info.get("channel_id", "")
-    channel_info = get_channel_info(channel_id)
+        sponsor_segments = f_sponsor.result()  if f_sponsor  else []
+        dislike_data     = f_dislikes.result() if f_dislikes else None
+        channel_info     = f_channel.result()
 
     return {
         "video_id":            video_id,

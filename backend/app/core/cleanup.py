@@ -7,15 +7,15 @@ Runs every 5 minutes. Removes expired jobs from the in-memory store.
 import threading
 import time
 import shutil
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from app.core.config import settings
-from app.core import jobs as job_store
+from app.core.jobs import evict_expired
 
 
 def _purge_once() -> None:
-    cutoff = datetime.utcnow() - timedelta(hours=settings.max_file_age_hours)
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=settings.max_file_age_hours)
 
     # 1. Remove expired job dirs from disk
     dl_dir = settings.download_dir
@@ -26,22 +26,23 @@ def _purge_once() -> None:
         if not job_dir.is_dir():
             continue
         try:
-            mtime = datetime.utcfromtimestamp(job_dir.stat().st_mtime)
+            mtime = datetime.fromtimestamp(job_dir.stat().st_mtime, tz=timezone.utc)
             if mtime < cutoff:
                 shutil.rmtree(job_dir, ignore_errors=True)
         except OSError:
             pass
 
     # 2. Evict stale entries from the in-memory job store
-    expired_ids = [
-        jid for jid, job in list(job_store._store.items())
-        if job.created_at < cutoff
-    ]
-    for jid in expired_ids:
-        job_store._store.pop(jid, None)
+    evict_expired(cutoff)
 
 
 def _loop(interval_seconds: int) -> None:
+    # Run once immediately on startup, then on schedule
+    try:
+        _purge_once()
+    except Exception:
+        pass
+
     while True:
         time.sleep(interval_seconds)
         try:

@@ -8,7 +8,7 @@ No extra services or dependencies required.
 import json
 import sqlite3
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from app.core.config import settings
@@ -17,22 +17,38 @@ from app.core.config import settings
 DB_PATH = settings.download_dir.parent / "cache" / "transcripts.db"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
+# Cache TTL — entries older than this are pruned on startup and periodically
+_CACHE_TTL_DAYS = 30
+
 # Thread-local storage so each thread gets its own connection
 _local = threading.local()
 
 
 def _conn() -> sqlite3.Connection:
     """Return a thread-local SQLite connection, creating it if needed."""
-    if not hasattr(_local, "conn") or _local.conn is None:
-        _local.conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
-        _local.conn.row_factory = sqlite3.Row
-        _local.conn.execute("PRAGMA journal_mode=WAL")   # safe for concurrent reads
-        _local.conn.execute("PRAGMA synchronous=NORMAL")
-    return _local.conn
+    conn = getattr(_local, "conn", None)
+    if conn is None:
+        conn = sqlite3.connect(str(DB_PATH))
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")   # safe for concurrent reads
+        conn.execute("PRAGMA synchronous=NORMAL")
+        _local.conn = conn
+    return conn
+
+
+def close_thread_connection() -> None:
+    """Close the SQLite connection for the current thread. Call at end of background threads."""
+    conn = getattr(_local, "conn", None)
+    if conn is not None:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        _local.conn = None
 
 
 def init_db() -> None:
-    """Create tables if they don't exist. Called once at startup."""
+    """Create tables and prune stale entries. Called once at startup."""
     conn = _conn()
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS transcript_cache (
@@ -51,6 +67,17 @@ def init_db() -> None:
             PRIMARY KEY (video_id, target_lang)
         );
     """)
+    conn.commit()
+
+    # Prune entries older than TTL
+    _prune_old_entries(conn)
+
+
+def _prune_old_entries(conn: sqlite3.Connection) -> None:
+    from datetime import timedelta
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=_CACHE_TTL_DAYS)).isoformat()
+    conn.execute("DELETE FROM transcript_cache  WHERE cached_at < ?", (cutoff,))
+    conn.execute("DELETE FROM translation_cache WHERE cached_at < ?", (cutoff,))
     conn.commit()
 
 
@@ -74,7 +101,8 @@ def get_transcript(video_id: str) -> dict | None:
 
 def save_transcript(data: dict) -> None:
     """Persist a transcript dict to the cache."""
-    _conn().execute(
+    conn = _conn()
+    conn.execute(
         """INSERT OR REPLACE INTO transcript_cache
            (video_id, language, segments, full_text, cached_at)
            VALUES (?, ?, ?, ?, ?)""",
@@ -83,10 +111,10 @@ def save_transcript(data: dict) -> None:
             data["language"],
             json.dumps(data["segments"]),
             data["full_text"],
-            datetime.utcnow().isoformat(),
+            datetime.now(timezone.utc).isoformat(),
         )
     )
-    _conn().commit()
+    conn.commit()
 
 
 # ── Translation cache ─────────────────────────────────────────────────────────
@@ -102,10 +130,11 @@ def get_translation(video_id: str, target_lang: str) -> str | None:
 
 def save_translation(video_id: str, target_lang: str, translated: str) -> None:
     """Persist a translation to the cache."""
-    _conn().execute(
+    conn = _conn()
+    conn.execute(
         """INSERT OR REPLACE INTO translation_cache
            (video_id, target_lang, translated, cached_at)
            VALUES (?, ?, ?, ?)""",
-        (video_id, target_lang, translated, datetime.utcnow().isoformat())
+        (video_id, target_lang, translated, datetime.now(timezone.utc).isoformat())
     )
-    _conn().commit()
+    conn.commit()

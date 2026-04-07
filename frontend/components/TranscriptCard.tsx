@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   FileText, Copy, Check, ChevronDown, ChevronUp,
@@ -128,12 +128,13 @@ function groupIntoParagraphs(segments: TranscriptSegment[]): Paragraph[] {
 }
 
 // ── Search highlight ──────────────────────────────────────────────────────────
-function Highlighted({ text, query, matchOffset, activeMatchIndex }: {
-  text: string; query: string; matchOffset: number; activeMatchIndex: number;
+function Highlighted({ text, regex, matchOffset, activeMatchIndex }: {
+  text: string; regex: RegExp | null; matchOffset: number; activeMatchIndex: number;
 }) {
-  if (!query.trim()) return <>{text}</>;
-  const safe  = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const parts = text.split(new RegExp(`(${safe})`, "gi"));
+  if (!regex) return <>{text}</>;
+  // Reset lastIndex so the stateful regex always starts from position 0
+  regex.lastIndex = 0;
+  const parts = text.split(regex);
   return (
     <>
       {parts.map((part, i) => {
@@ -214,6 +215,11 @@ function WhisperProgress({ jobId, onDone }: { jobId: string; onDone: () => void 
   const [message,  setMessage]  = useState("Starting…");
   const [failed,   setFailed]   = useState(false);
 
+  // Use a ref for onDone so the polling loop never restarts when the parent
+  // re-renders and recreates the callback (which happens on every progress update).
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
+
   useEffect(() => {
     let cancelled = false;
     const poll = async () => {
@@ -223,7 +229,7 @@ function WhisperProgress({ jobId, onDone }: { jobId: string; onDone: () => void 
           if (cancelled) break;
           setProgress(job.progress);
           setMessage(job.message);
-          if (job.status === "done")  { onDone(); break; }
+          if (job.status === "done")  { onDoneRef.current(); break; }
           if (job.status === "error") { setFailed(true); break; }
         } catch { /* ignore network blips */ }
         await new Promise(r => setTimeout(r, 2000));
@@ -231,7 +237,7 @@ function WhisperProgress({ jobId, onDone }: { jobId: string; onDone: () => void 
     };
     poll();
     return () => { cancelled = true; };
-  }, [jobId, onDone]);
+  }, [jobId]); // jobId only — onDone changes don't restart the loop
 
   return (
     <div className="flex flex-col gap-3">
@@ -280,6 +286,18 @@ export default function TranscriptCard({ url, title, uploader, description, vide
     setShowTimestamps(false); setShowDownloadMenu(false); setActiveMatchIndex(0); setError(null);
   }, [title, uploader, description]);
 
+  // Close download dropdown when clicking outside
+  useEffect(() => {
+    if (!showDownloadMenu) return;
+    const handle = (e: MouseEvent) => {
+      if (downloadRef.current && !downloadRef.current.contains(e.target as Node)) {
+        setShowDownloadMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [showDownloadMenu]);
+
   const isRtl = detectIsRtl(
     transcript?.language ?? "en",
     transcript?.full_text?.slice(0, 300) ?? ""
@@ -313,21 +331,35 @@ export default function TranscriptCard({ url, title, uploader, description, vide
     return blocks;
   }, [transcript]);
 
+  // Debounce search — wait 150ms after user stops typing before running search.
+  // Prevents RegExp creation and match counting on every single keystroke.
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(searchQuery), 150);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
   // ── Search ────────────────────────────────────────────────────────────────
+  // RegExp memoized separately so Highlighted components can reuse it instead
+  // of each creating their own copy per paragraph.
+  const searchRegex = useMemo(() => {
+    if (!debouncedQuery.trim()) return null;
+    const safe = debouncedQuery.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(${safe})`, "gi");
+  }, [debouncedQuery]);
+
   const searchInfo = useMemo(() => {
-    if (!transcript || !searchQuery.trim())
+    if (!transcript || !searchRegex)
       return { matchesPerBlock: [] as number[], blockOffsets: [] as number[], totalMatches: 0 };
-    const safe  = searchQuery.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const regex = new RegExp(safe, "gi");
     const blocks = showTimestamps ? transcript.segments.map(s => s.text) : cleanParagraphs;
-    const matchesPerBlock = blocks.map(b => (b.match(regex) ?? []).length);
+    const matchesPerBlock = blocks.map(b => (b.match(searchRegex) ?? []).length);
     const blockOffsets: number[] = [];
     let cum = 0;
     for (const c of matchesPerBlock) { blockOffsets.push(cum); cum += c; }
     return { matchesPerBlock, blockOffsets, totalMatches: cum };
-  }, [transcript, searchQuery, showTimestamps, cleanParagraphs]);
+  }, [transcript, searchRegex, showTimestamps, cleanParagraphs]);
 
-  useEffect(() => { setActiveMatchIndex(0); }, [searchQuery]);
+  useEffect(() => { setActiveMatchIndex(0); }, [debouncedQuery]);
   useEffect(() => { if (searchInfo.totalMatches > 0) setExpanded(true); }, [searchInfo.totalMatches]);
   useEffect(() => {
     if (!searchInfo.totalMatches) return;
@@ -376,7 +408,7 @@ export default function TranscriptCard({ url, title, uploader, description, vide
   };
 
   // Called when Whisper job finishes — re-fetch from cache (instant)
-  const handleWhisperDone = async () => {
+  const handleWhisperDone = useCallback(async () => {
     setWhisperJobId(null);
     setLoading(true);
     try {
@@ -390,7 +422,7 @@ export default function TranscriptCard({ url, title, uploader, description, vide
     } finally {
       setLoading(false);
     }
-  };
+  }, [url]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleCopy = async () => {
     if (!transcript) return;
@@ -579,7 +611,7 @@ export default function TranscriptCard({ url, title, uploader, description, vide
                                       [{formatTime(seg.start)}]
                                     </span>
                                     <span className="text-[0.85rem] leading-snug text-stone-700 dark:text-fg/75">
-                                      <Highlighted text={seg.text} query={searchQuery}
+                                      <Highlighted text={seg.text} regex={searchRegex}
                                         matchOffset={searchInfo.blockOffsets[gi] ?? 0}
                                         activeMatchIndex={activeMatchIndex} />
                                     </span>
@@ -600,7 +632,7 @@ export default function TranscriptCard({ url, title, uploader, description, vide
                                 </div>
                               )}
                               <p style={readerStyle}>
-                                <Highlighted text={block.text} query={searchQuery}
+                                <Highlighted text={block.text} regex={searchRegex}
                                   matchOffset={searchInfo.blockOffsets[bi] ?? 0}
                                   activeMatchIndex={activeMatchIndex} />
                               </p>
@@ -612,7 +644,7 @@ export default function TranscriptCard({ url, title, uploader, description, vide
                         <div className="px-5 py-5 text-stone-800 dark:text-fg/80">
                           {cleanParagraphs.map((para, pi) => (
                             <p key={pi} className="mb-5 last:mb-0" style={readerStyle}>
-                              <Highlighted text={para} query={searchQuery}
+                              <Highlighted text={para} regex={searchRegex}
                                 matchOffset={searchInfo.blockOffsets[pi] ?? 0}
                                 activeMatchIndex={activeMatchIndex} />
                             </p>

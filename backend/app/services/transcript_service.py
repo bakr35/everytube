@@ -1,5 +1,6 @@
 import html
 import re
+import threading
 import http.cookiejar
 from pathlib import Path
 
@@ -16,19 +17,31 @@ from youtube_transcript_api import (
 from urllib.parse import urlparse, parse_qs
 
 
+_api_instance: YouTubeTranscriptApi | None = None
+_api_lock = threading.Lock()
+
+
 def _make_api() -> YouTubeTranscriptApi:
     """
-    Build a YouTubeTranscriptApi instance, attaching browser cookies when a
-    cookies file is configured — this bypasses YouTube's IP-based rate limits.
+    Return a shared YouTubeTranscriptApi instance.
+    Re-creates it only when cookies are configured (re-reads cookies file each time
+    so fresh cookies are picked up without a server restart).
+    Without cookies, re-uses the same instance to avoid repeated session creation.
     """
+    global _api_instance
     cookies_path = Path(settings.cookies_file) if settings.cookies_file else None
     if cookies_path and cookies_path.is_file():
+        # Always reload cookies in case they were refreshed
         jar = http.cookiejar.MozillaCookieJar(str(cookies_path))
         jar.load(ignore_discard=True, ignore_expires=True)
         session = requests.Session()
         session.cookies = jar
         return YouTubeTranscriptApi(http_client=session)
-    return YouTubeTranscriptApi()
+
+    with _api_lock:
+        if _api_instance is None:
+            _api_instance = YouTubeTranscriptApi()
+    return _api_instance
 
 # ── Brand / term correction patterns ─────────────────────────────────────────
 # Each entry: (case-insensitive regex, replacement)
@@ -201,9 +214,15 @@ def _clean_segment(text: str) -> str:
 
 # ── Full-text post-processing ─────────────────────────────────────────────────
 
+# Pre-compile all brand/correction patterns once at import time
+_COMPILED_PATTERNS: list[tuple[re.Pattern, str]] = [
+    (re.compile(p, re.IGNORECASE), r) for p, r in _BRAND_PATTERNS
+]
+
+
 def _apply_brand_corrections(text: str) -> str:
-    for pattern, replacement in _BRAND_PATTERNS:
-        text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+    for pattern, replacement in _COMPILED_PATTERNS:
+        text = pattern.sub(replacement, text)
     return text
 
 

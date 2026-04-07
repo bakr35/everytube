@@ -20,15 +20,42 @@ os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
 from app.core.config import settings
 from app.core.jobs import create_job, update_job, JobStatus
-from app.core.cache import save_transcript
+from app.core.cache import save_transcript, close_thread_connection
 from app.services.transcript_cleaner import clean_transcript
 
 # ── Model cache (loaded once, lazily) ────────────────────────────────────────
 _model      = None
 _model_lock = threading.Lock()
-
-
 _use_whisperx = False   # set to True on first successful whisperx import
+
+# ── Active job dedup ──────────────────────────────────────────────────────────
+# Prevents two simultaneous Whisper jobs for the same video_id.
+_active_jobs: dict[str, str] = {}   # video_id → job_id
+_active_lock = threading.Lock()
+
+# Maximum concurrent Whisper jobs — each job loads audio into RAM
+_MAX_WHISPER_JOBS = 2
+
+
+def get_active_whisper_job(video_id: str) -> str | None:
+    """Return job_id if this video is already being transcribed, else None."""
+    with _active_lock:
+        return _active_jobs.get(video_id)
+
+
+def _register_job(video_id: str, job_id: str) -> None:
+    with _active_lock:
+        _active_jobs[video_id] = job_id
+
+
+def _unregister_job(video_id: str) -> None:
+    with _active_lock:
+        _active_jobs.pop(video_id, None)
+
+
+def _active_job_count() -> int:
+    with _active_lock:
+        return len(_active_jobs)
 
 
 def _get_model():
@@ -44,7 +71,6 @@ def _get_model():
                         )
                         _use_whisperx = True
                     except Exception:
-                        # WhisperX unavailable (e.g. numpy/torch conflict) — fall back
                         from faster_whisper import WhisperModel
                         _model = WhisperModel(
                             settings.whisper_model, device="cpu", compute_type="int8"
@@ -127,10 +153,7 @@ def _transcribe_with_diarization(audio_path: str, job_id: str) -> dict:
     diarize_segments = diarize_pipeline(audio_path)
     result = whisperx.assign_word_speakers(diarize_segments, result)
 
-    # Build segments with speaker labels
-    # Map raw pyannote labels ("SPEAKER_00") → friendly ("Speaker 1")
     speaker_map: dict[str, str] = {}
-
     segments = []
     for seg in result.get("segments", []):
         text = seg.get("text", "").strip()
@@ -157,10 +180,14 @@ def _transcribe_basic(audio_path: str, job_id: str) -> dict:
     model = _get_model()
 
     update_job(job_id, progress=55, message="Transcribing audio… this may take a few minutes")
-    segs, info = model.transcribe(audio_path, beam_size=5)
+
+    # faster-whisper returns a lazy generator — consume it with live progress updates.
+    # Without this the job would sit at 55% for the entire transcription duration.
+    segs_gen, info = model.transcribe(audio_path, beam_size=5)
+    duration = info.duration or 1  # avoid division by zero
 
     segments = []
-    for seg in segs:
+    for seg in segs_gen:
         text = seg.text.strip()
         if text:
             segments.append({
@@ -169,6 +196,10 @@ def _transcribe_basic(audio_path: str, job_id: str) -> dict:
                 "duration": round(seg.end - seg.start, 3),
                 "speaker":  None,
             })
+        # Update progress proportional to how far through the audio we are (55–85%)
+        pct = 55 + int((seg.end / duration) * 30)
+        update_job(job_id, progress=min(pct, 85),
+                   message=f"Transcribing… {min(int(seg.end/duration*100), 99)}%")
 
     return {"language": info.language, "segments": segments}
 
@@ -208,6 +239,13 @@ def run_whisper_job(job_id: str, url: str, video_id: str) -> None:
                    message="Transcription failed", error=str(exc))
 
     finally:
+        # Always unregister so a retry can start a fresh job
+        _unregister_job(video_id)
+
+        # Close the thread-local SQLite connection to prevent connection leak
+        close_thread_connection()
+
+        # Clean up temp audio file and its directory
         if audio_path and os.path.exists(audio_path):
             try:
                 os.remove(audio_path)
@@ -219,11 +257,20 @@ def run_whisper_job(job_id: str, url: str, video_id: str) -> None:
 
 
 def start_whisper_job(url: str, video_id: str) -> str:
+    # Enforce concurrent job cap
+    if _active_job_count() >= _MAX_WHISPER_JOBS:
+        raise RuntimeError(
+            "Too many transcription jobs running. Please wait for one to finish."
+        )
+
     job = create_job()
-    t   = threading.Thread(
+    _register_job(video_id, job.id)
+
+    t = threading.Thread(
         target=run_whisper_job,
         args=(job.id, url, video_id),
         daemon=True,
+        name=f"whisper-{job.id[:8]}",
     )
     t.start()
     return job.id

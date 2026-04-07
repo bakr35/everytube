@@ -27,6 +27,7 @@ export default function Home() {
   const [url, setUrl]                             = useState("");
   const [meta, setMeta]                           = useState<Metadata | null>(null);
   const [loading, setLoading]                     = useState(false);
+  const [fetchError, setFetchError]               = useState<string | null>(null);
   const [fetchedUrl, setFetchedUrl]               = useState<string | null>(null);
   const [sharedVideoJobId, setSharedVideoJobId]   = useState<string | null>(null);
   const [playlist, setPlaylist]                   = useState<PlaylistInfo | null>(null);
@@ -34,6 +35,8 @@ export default function Home() {
   const [sessionKey, setSessionKey]               = useState(0);
 
   const handleDetected = async (detectedUrl: string) => {
+    setFetchError(null);
+
     // ── Playlist URL ──────────────────────────────────────────────────────
     if (PLAYLIST_REGEX.test(detectedUrl)) {
       if (detectedUrl === playlistUrl) return;
@@ -43,8 +46,9 @@ export default function Home() {
       try {
         const data = await fetchPlaylistInfo(detectedUrl);
         setPlaylist(data);
-      } catch {
+      } catch (e: unknown) {
         setPlaylistUrl(null);
+        setFetchError(e instanceof Error ? e.message : "Failed to load playlist. Please try again.");
       } finally {
         setLoading(false);
       }
@@ -58,8 +62,9 @@ export default function Home() {
     try {
       const data = await fetchMetadata(detectedUrl);
       setMeta(data);
-    } catch {
+    } catch (e: unknown) {
       setFetchedUrl(null);
+      setFetchError(e instanceof Error ? e.message : "Failed to load video. Please check the URL and try again.");
     } finally {
       setLoading(false);
     }
@@ -69,6 +74,7 @@ export default function Home() {
     setUrl("");
     setMeta(null);
     setFetchedUrl(null);
+    setFetchError(null);
     setPlaylist(null);
     setPlaylistUrl(null);
     setLoading(false);
@@ -126,6 +132,11 @@ export default function Home() {
             onReset={handleReset}
             collapsed={!!meta}
           />
+          {fetchError && (
+            <p className="mt-4 text-xs font-body tracking-wide text-red-500">
+              {fetchError}
+            </p>
+          )}
         </div>
       </section>
 

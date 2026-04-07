@@ -6,8 +6,14 @@ from app.core.config import settings
 from app.core.jobs import update_job, JobStatus
 
 
+_FFMPEG_TIMEOUT = 3600  # 1 hour hard limit — prevents hung FFmpeg from leaking threads
+
+
 def _run(cmd: list[str]) -> None:
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=_FFMPEG_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("FFmpeg timed out after 1 hour — process killed")
     if result.returncode != 0:
         raise RuntimeError(f"FFmpeg error: {result.stderr[-500:]}")
 
@@ -24,7 +30,9 @@ def _embed_cover(mp3_path: Path, thumbnail_url: str) -> None:
     try:
         with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
             tmp_img = Path(f.name)
-        urllib.request.urlretrieve(thumbnail_url, str(tmp_img))
+        # 10s timeout — thumbnail fetch must not hang the audio job thread
+        with urllib.request.urlopen(thumbnail_url, timeout=10) as resp:
+            tmp_img.write_bytes(resp.read())
 
         tmp_out = mp3_path.with_suffix(".cover_tmp.mp3")
         _run(_ffmpeg(
@@ -147,14 +155,37 @@ def normalize_audio(job_id: str, source_path: str) -> Path:
     suffix = Path(source_path).suffix
     out_file = out_dir / f"normalized{suffix}"
 
-    update_job(job_id, status=JobStatus.RUNNING, progress=10, message="Normalizing audio…")
+    update_job(job_id, status=JobStatus.RUNNING, progress=10, message="Analyzing loudness…")
 
-    _run(_ffmpeg(
-        "-y",
-        "-i", source_path,
-        "-af", "loudnorm=I=-16:TP=-1.5:LRA=11",
-        str(out_file),
-    ))
+    # EBU R128 two-pass loudnorm:
+    # Pass 1 — measure actual loudness stats (output to stderr as JSON)
+    # Pass 2 — apply precise correction using measured values
+    import json as _json, re as _re
+    probe = subprocess.run(
+        _ffmpeg("-y", "-i", source_path,
+                "-af", "loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json",
+                "-f", "null", "-"),
+        capture_output=True, text=True, timeout=_FFMPEG_TIMEOUT,
+    )
+    # Extract the JSON block FFmpeg prints to stderr
+    match = _re.search(r'\{[^{}]+\}', probe.stderr, _re.DOTALL)
+    if match:
+        stats = _json.loads(match.group())
+        af = (
+            f"loudnorm=I=-16:TP=-1.5:LRA=11"
+            f":measured_I={stats['input_i']}"
+            f":measured_TP={stats['input_tp']}"
+            f":measured_LRA={stats['input_lra']}"
+            f":measured_thresh={stats['input_thresh']}"
+            f":offset={stats['target_offset']}"
+            f":linear=true:print_format=summary"
+        )
+    else:
+        # Fall back to single-pass if stats couldn't be parsed
+        af = "loudnorm=I=-16:TP=-1.5:LRA=11"
+
+    update_job(job_id, progress=55, message="Applying normalization…")
+    _run(_ffmpeg("-y", "-i", source_path, "-af", af, str(out_file)))
 
     update_job(
         job_id,

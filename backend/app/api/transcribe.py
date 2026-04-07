@@ -2,7 +2,7 @@ import asyncio
 from fastapi import APIRouter, HTTPException
 from app.models.schemas import TranscriptRequest, TranscriptResponse, QuranVerifyRequest
 from app.services.transcript_service import fetch_transcript
-from app.services.whisper_service import start_whisper_job
+from app.services.whisper_service import start_whisper_job, get_active_whisper_job
 from app.services.transcript_service import _extract_video_id
 from youtube_transcript_api import NoTranscriptFound, TranscriptsDisabled, VideoUnavailable
 
@@ -19,7 +19,9 @@ async def transcribe(req: TranscriptRequest):
                    {"job_id": "...", "mode": "whisper"} for the client to poll.
     """
     try:
-        data = fetch_transcript(req.url, req.language)
+        # Run in thread — YouTube API + Claude cleaning are blocking network calls
+        # that must not block the async event loop.
+        data = await asyncio.to_thread(fetch_transcript, req.url, req.language)
         return TranscriptResponse(**data)
 
     except (NoTranscriptFound, TranscriptsDisabled):
@@ -28,6 +30,11 @@ async def transcribe(req: TranscriptRequest):
             video_id = _extract_video_id(req.url)
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e))
+
+        # Dedup: if this video is already being transcribed, return the existing job
+        existing_job_id = get_active_whisper_job(video_id)
+        if existing_job_id:
+            return {"job_id": existing_job_id, "mode": "whisper", "status": "running"}
 
         job_id = start_whisper_job(req.url, video_id)
         return {"job_id": job_id, "mode": "whisper", "status": "pending"}

@@ -24,11 +24,15 @@ def _find_ffmpeg() -> str:
 
 
 class Settings(BaseSettings):
-    download_dir: Path = Path("downloads")
+    download_dir: Path = Path(__file__).resolve().parent.parent.parent / "downloads"
     max_file_age_hours: float = 0.5  # 30 minutes
     allowed_origins: list[str] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        "http://localhost:3001",      # Next.js fallback port when 3000 is taken
+        "http://127.0.0.1:3001",
+        "http://localhost:3002",
+        "http://127.0.0.1:3002",
     ]
     # Resolved once at startup — all services read from here
     ffmpeg_path: str = ""

@@ -6,6 +6,7 @@ Falls back to raw text if the model refuses or the output looks wrong.
 """
 
 import re
+import concurrent.futures
 import anthropic
 from app.core.config import settings
 
@@ -71,8 +72,21 @@ OUTPUT: The cleaned transcript only. Paragraphs separated by a blank line.
 RAW TRANSCRIPT:
 {chunk}"""
 
+# ── Anthropic client (singleton — reuse connection pool across calls) ─────────
+_client: anthropic.Anthropic | None = None
+
+
+def _get_client() -> anthropic.Anthropic:
+    global _client
+    if _client is None:
+        _client = anthropic.Anthropic(
+            api_key=settings.anthropic_api_key,
+            timeout=60.0,   # 60s hard timeout per API call
+        )
+    return _client
+
+
 # ── Refusal detection ─────────────────────────────────────────────────────────
-# If the model talks about itself instead of returning the transcript, fall back.
 _REFUSAL_PHRASES = re.compile(
     r"\b(I appreciate|I need to clarify|I cannot|I'm unable|I recommend|"
     r"my instructions|I'm happy to help|please note|however,? I)\b",
@@ -81,11 +95,8 @@ _REFUSAL_PHRASES = re.compile(
 
 
 def _looks_like_refusal(cleaned: str, raw: str) -> bool:
-    """Return True if the output is a refusal/explanation rather than a transcript."""
-    # Refusal phrase detected
     if _REFUSAL_PHRASES.search(cleaned):
         return True
-    # Output is less than 20% of the input length — something went very wrong
     if len(raw.strip()) > 100 and len(cleaned.strip()) < len(raw.strip()) * 0.2:
         return True
     return False
@@ -93,17 +104,15 @@ def _looks_like_refusal(cleaned: str, raw: str) -> bool:
 
 # ── Chunking ──────────────────────────────────────────────────────────────────
 
-_CHUNK_WORDS    = 800   # target chunk size
-_SENTENCE_END   = re.compile(r'(?<=[.!?؟])\s+')
+_CHUNK_WORDS  = 800
+_SENTENCE_END = re.compile(r'(?<=[.!?؟])\s+')
 
 
 def _split_chunks(text: str) -> list[str]:
     """
     Split at sentence boundaries so no sentence is ever shared between chunks.
-    This prevents Claude from completing a dangling sentence in chunk N and
-    then repeating it verbatim as the first sentence of chunk N+1.
+    Prevents Claude from repeating a dangling sentence across chunk boundaries.
     """
-    # Split on whitespace after sentence-ending punctuation
     sentences = _SENTENCE_END.split(text.strip())
     if not sentences:
         return [text]
@@ -114,8 +123,6 @@ def _split_chunks(text: str) -> list[str]:
 
     for sent in sentences:
         w = len(sent.split())
-        # If adding this sentence would push us over the limit AND we already
-        # have content, flush first — unless the sentence alone exceeds the limit
         if current and current_words + w > _CHUNK_WORDS:
             chunks.append(" ".join(current))
             current = []
@@ -129,38 +136,43 @@ def _split_chunks(text: str) -> list[str]:
     return chunks or [text]
 
 
+# ── Per-chunk cleaning ────────────────────────────────────────────────────────
+
+def _clean_chunk(client: anthropic.Anthropic, chunk: str) -> str:
+    """Clean a single chunk. Returns raw chunk on failure or refusal."""
+    try:
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=4096,
+            system=_SYSTEM,
+            messages=[{"role": "user", "content": _USER_TMPL.format(chunk=chunk)}],
+        )
+        result = response.content[0].text.strip()
+        if _looks_like_refusal(result, chunk):
+            return chunk
+        return result
+    except Exception:
+        return chunk
+
+
 # ── Main function ─────────────────────────────────────────────────────────────
 
 def clean_transcript(raw_text: str) -> str:
     """
     Clean raw transcript text via Claude.
-    Returns raw_text unchanged if the API key is missing, the call fails,
-    or the model returns a refusal instead of the cleaned transcript.
+    Chunks are processed in parallel for speed.
+    Returns raw_text unchanged if the API key is missing or the text is empty.
     """
     if not settings.anthropic_api_key or not raw_text.strip():
         return raw_text
 
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    client = _get_client()
     chunks = _split_chunks(raw_text)
-    cleaned: list[str] = []
 
-    for chunk in chunks:
-        try:
-            response = client.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=4096,
-                system=_SYSTEM,
-                messages=[{"role": "user", "content": _USER_TMPL.format(chunk=chunk)}],
-            )
-            result = response.content[0].text.strip()
-
-            # Validate — fall back to raw chunk if the model refused
-            if _looks_like_refusal(result, chunk):
-                cleaned.append(chunk)
-            else:
-                cleaned.append(result)
-
-        except Exception:
-            cleaned.append(chunk)
+    # Process all chunks in parallel — a 4-chunk transcript goes from ~8s to ~2s
+    max_workers = min(len(chunks), 5)  # cap at 5 parallel calls to avoid rate limits
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = [pool.submit(_clean_chunk, client, chunk) for chunk in chunks]
+        cleaned = [f.result() for f in futures]  # preserves order
 
     return "\n\n".join(c.strip() for c in cleaned if c.strip())
