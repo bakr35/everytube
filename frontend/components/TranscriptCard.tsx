@@ -370,7 +370,7 @@ export default function TranscriptCard({ url, title, uploader, description, vide
   const goPrev = () => { if (searchInfo.totalMatches) setActiveMatchIndex(i => (i-1+searchInfo.totalMatches) % searchInfo.totalMatches); };
 
   // ── Actions ───────────────────────────────────────────────────────────────
-  const handleFetch = async () => {
+  const handleFetch = async (forceRefresh = false) => {
     const fromMeta = metaIsQuranic(title, uploader, description);
     setIsQuranic(fromMeta); setQuranTrigger("meta");
     if (fromMeta) return;
@@ -379,7 +379,7 @@ export default function TranscriptCard({ url, title, uploader, description, vide
     setSearchQuery(""); setExpanded(false);
 
     try {
-      const result = await fetchTranscript(url);
+      const result = await fetchTranscript(url, forceRefresh);
 
       if (isWhisperJob(result)) {
         // No YouTube captions — Whisper job started
@@ -572,7 +572,7 @@ export default function TranscriptCard({ url, title, uploader, description, vide
         ) : (
           <>
             {/* Fetch / Re-fetch button */}
-            <button onClick={handleFetch} disabled={loading || !!whisperJobId}
+            <button onClick={() => handleFetch(!!transcript)} disabled={loading || !!whisperJobId}
               className="py-3 text-xs tracking-widest uppercase font-body font-bold disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-150 flex items-center justify-center gap-2 max-w-sm bg-stone-900 text-white border border-stone-900 shadow-sm hover:bg-stone-700 hover:border-stone-700 dark:bg-transparent dark:text-fg dark:border-fg dark:shadow-none dark:hover:bg-fg dark:hover:text-bg">
               {loading
                 ? <><span className="inline-block w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" /> Loading…</>

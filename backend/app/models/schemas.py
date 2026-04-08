@@ -43,6 +43,7 @@ class TranscriptRequest(BaseModel):
     url: str
     # language is kept for internal/SRT use but defaults to auto-detect
     language: str = "auto"
+    force_refresh: bool = False   # if True, bypass/delete the cache and re-fetch
 
 
 

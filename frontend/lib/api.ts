@@ -196,11 +196,11 @@ export function isWhisperJob(r: TranscriptResult): r is WhisperJob {
   return "job_id" in r;
 }
 
-export async function fetchTranscript(url: string): Promise<TranscriptResult> {
+export async function fetchTranscript(url: string, forceRefresh = false): Promise<TranscriptResult> {
   const res = await fetch(`${BASE}/api/transcribe`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url, language: "auto" }),
+    body: JSON.stringify({ url, language: "auto", force_refresh: forceRefresh }),
   });
   if (!res.ok) throw new Error((await res.json()).detail ?? "Transcription failed");
   return res.json();

@@ -89,7 +89,14 @@ def _download_audio(url: str, job_id: str) -> str:
     tmp_dir  = Path(tempfile.mkdtemp(prefix="whisper_"))
     out_tmpl = str(tmp_dir / "audio.%(ext)s")
 
-    base_opts: dict = {"quiet": True, "noplaylist": True, "no_color": True}
+    base_opts: dict = {
+        "quiet": True,
+        "noplaylist": True,
+        "no_color": True,
+        "socket_timeout": 30,       # abort if no data received for 30s
+        "retries": 3,               # retry up to 3 times on network errors
+        "fragment_retries": 3,      # retry individual fragments (DASH/HLS)
+    }
     if settings.cookies_file and Path(settings.cookies_file).is_file():
         base_opts["cookiefile"] = settings.cookies_file
     elif settings.cookies_from_browser:
@@ -220,8 +227,15 @@ def run_whisper_job(job_id: str, url: str, video_id: str) -> None:
             whisper_result = _transcribe_basic(audio_path, job_id)
 
         update_job(job_id, progress=88, message="Cleaning transcript…")
-        raw_text  = " ".join(s["text"] for s in whisper_result["segments"])
-        full_text = clean_transcript(raw_text)
+        raw_text = " ".join(s["text"] for s in whisper_result["segments"])
+        language = whisper_result.get("language", "")
+
+        # Claude cleaning is English-only — skip for all other languages to
+        # prevent content compression/loss on non-English audio.
+        if language.startswith("en"):
+            full_text = clean_transcript(raw_text)
+        else:
+            full_text = raw_text
 
         transcript_data = {
             "video_id": video_id,

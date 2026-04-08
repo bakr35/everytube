@@ -7,7 +7,7 @@ from pathlib import Path
 import requests
 from app.services.transcript_cleaner import clean_transcript
 from app.core.config import settings
-from app.core.cache import get_transcript, save_transcript
+from app.core.cache import get_transcript, save_transcript, delete_transcript
 from youtube_transcript_api import (
     YouTubeTranscriptApi,
     NoTranscriptFound,
@@ -228,13 +228,16 @@ def _apply_brand_corrections(text: str) -> str:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-def fetch_transcript(url: str, language: str = "auto") -> dict:
+def fetch_transcript(url: str, language: str = "auto", force_refresh: bool = False) -> dict:
     video_id = _extract_video_id(url)
 
     # ── Cache hit ─────────────────────────────────────────────────────────────
-    cached = get_transcript(video_id)
-    if cached:
-        return cached
+    if force_refresh:
+        delete_transcript(video_id)
+    else:
+        cached = get_transcript(video_id)
+        if cached:
+            return cached
 
     api = _make_api()
 
@@ -307,11 +310,17 @@ def fetch_transcript(url: str, language: str = "auto") -> dict:
             "speaker":  None,
         })
 
-    # Build raw joined text then pass through LLM cleaner
+    # Build raw joined text
     raw_joined = " ".join(s["text"] for s in segments)
-    full_text   = clean_transcript(raw_joined)
-    # Safety net: enforce brand name casing after Claude (e.g. "openai" → "OpenAI")
-    full_text   = _apply_brand_corrections(full_text)
+
+    # Claude cleaning and brand corrections are English-only.
+    # For any other language skip the LLM call entirely — Claude compresses
+    # non-English text and silently drops content.
+    if target.language_code.startswith("en"):
+        full_text = clean_transcript(raw_joined)
+        full_text = _apply_brand_corrections(full_text)
+    else:
+        full_text = raw_joined
 
     result = {
         "video_id": video_id,

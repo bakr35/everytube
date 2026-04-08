@@ -99,6 +99,13 @@ def get_transcript(video_id: str) -> dict | None:
     }
 
 
+def delete_transcript(video_id: str) -> None:
+    """Remove a cached transcript so it can be re-fetched fresh."""
+    conn = _conn()
+    conn.execute("DELETE FROM transcript_cache WHERE video_id = ?", (video_id,))
+    conn.commit()
+
+
 def save_transcript(data: dict) -> None:
     """Persist a transcript dict to the cache."""
     conn = _conn()

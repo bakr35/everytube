@@ -21,7 +21,7 @@ async def transcribe(req: TranscriptRequest):
     try:
         # Run in thread — YouTube API + Claude cleaning are blocking network calls
         # that must not block the async event loop.
-        data = await asyncio.to_thread(fetch_transcript, req.url, req.language)
+        data = await asyncio.to_thread(fetch_transcript, req.url, req.language, req.force_refresh)
         return TranscriptResponse(**data)
 
     except (NoTranscriptFound, TranscriptsDisabled):
